@@ -1,22 +1,32 @@
-# Project Management Personal Memory System
+# 个人项目管理记忆系统
 
-This repository collects the reference materials, extracted prototype packages, roadmap, and implementation planning for a local-first personal memory and context system.
+这个仓库用于沉淀“本地优先的个人记忆 / 上下文系统”的资料、路线图和详细计划。目标不是先写一个小功能，而是把记忆系统设计成一个可以独立存在、也可以被完整项目管理系统接入的代码仓。
 
-The intended system is an independent memory/context repository that can be integrated by a broader project management system while remaining usable by Claude Code, Codex, and OpenClaw.
+## 仓库内容
 
-## Repository Contents
+- [docs/roadmap.md](docs/roadmap.md)：当前产品方向、阶段路线和边界。
+- [docs/detailed-plan.md](docs/detailed-plan.md)：已确认需求、关键设计决策、开源仓库复用评估和验证计划。
+- [记忆系统设计/](记忆系统设计/)：早期记忆系统设计调研文档。
+- [记忆库/](记忆库/)：基于 `mcp-memory-service` 的安装包解压内容，仅作为参考材料。
 
-- `docs/roadmap.md`: current product direction and phased roadmap.
-- `docs/detailed-plan.md`: detailed requirements, boundaries, open-source reuse evaluation, and spike plan.
-- `记忆系统设计/`: earlier design documents and research notes.
-- `记忆库/`: extracted mcp-memory-service based installation package for reference.
-- `记忆系统设计.zip`: original archive for the design documents.
-- `记忆系统安装包.tar(1).gz`: original archive for the installation package.
+## 当前方向
 
-## Current Direction
+当前优先方向是：保留 Claude Code、Codex、OpenClaw 的原生使用体验，在不强制改变日常入口的前提下，为三者接入同一套本地记忆 / 上下文系统。
 
-The current preferred approach is to preserve native Claude Code, Codex, and OpenClaw usage while reusing existing open-source work where possible:
+当前复用判断：
 
-- Evaluate `memsearch` as the cross-client working-memory capture and recall layer.
-- Evaluate `claude-context` as the codebase indexing/reference layer.
-- Use `engram`, `claude-mem`, and `mem0` as references for storage, UX, and long-term memory model design.
+- 优先验证 `memsearch` 作为 Claude Code / Codex / OpenClaw 三端自动捕获和召回底座。
+- 评估 `claude-context` 作为代码库上下文索引参考。
+- 借鉴 `engram` 的本地 SQLite、FTS、MCP、CLI、TUI 思路。
+- 借鉴 `claude-mem` 的 Claude Code 压缩、状态展示和渐进式上下文体验。
+- 借鉴 `mem0` 的长期记忆模型、实体作用域、衰减、图谱和 API 设计，但不把它作为第一版核心依赖。
+
+## 当前重要结论
+
+- 不从零重写三端交互层，先验证可直接复用的方案。
+- 不要求每次对话结束都审核记忆，这会造成过高负担。
+- 自动捕获的会话摘要属于“工作记忆”，可以先自动保存。
+- 正式长期记忆只从高价值内容中低频提升。
+- 完整原文可以保存，但默认不注入模型上下文。
+- 敏感记忆可以本地加密保存，但智能体读取前必须获得用户授权。
+- 代码库上下文是记忆系统的一部分，不只是简单文件搜索。

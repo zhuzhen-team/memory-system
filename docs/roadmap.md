@@ -1,204 +1,209 @@
-# Project Memory System Roadmap
+# 记忆 / 上下文系统路线图
 
-Last updated: 2026-05-09
+最后更新：2026-05-09
 
-## Product Direction
+## 一句话定位
 
-This repository is for an independent local-first memory and context system for personal agent work. The project management system will integrate with this memory system, but the memory system must remain usable as a standalone local service.
+这个仓库要沉淀一个独立、本地优先、面向个人使用的记忆 / 上下文系统。它不是项目管理系统里的一个小模块，而是可以被项目管理系统、Claude Code、Codex、OpenClaw 共同接入的本地记忆底座。
 
-The first-class clients are:
+## 当前产品方向
+
+第一版最重要的目标是保留 Claude Code、Codex、OpenClaw 的原生使用体验。用户应该继续按原来的方式打开和使用这些工具，记忆系统通过插件、钩子、MCP 工具、后台索引等方式工作，而不是强迫用户每次都通过新的包装命令启动。
+
+第一版一等客户端：
 
 - Claude Code
 - Codex
 - OpenClaw
 
-Claude Desktop is optional and should not drive the first version.
+Claude Desktop 可作为后续可选接入，不作为第一版核心目标。
 
-The primary product requirement is to preserve the native usage experience of Claude Code, Codex, and OpenClaw. Users should continue using those tools normally. The memory system should integrate through plugins, hooks, MCP tools, and background indexing rather than requiring a new wrapper command for daily work.
+## 已确认的关键需求
 
-## Current Strategic Decision
+1. 本地部署。
+   每个人本机部署一套，不做第一版中心化 SaaS。
 
-The system should not be built from scratch at the interaction layer.
+2. 保留原生体验。
+   Claude Code、Codex、OpenClaw 的日常使用方式不能被明显破坏。
 
-The preferred reuse strategy is:
+3. 低审核负担。
+   不接受“每次对话结束都审核一堆候选记忆”的交互。系统应该少生成正式候选，降低用户负担。
 
-- Use `memsearch` as the baseline cross-client capture and recall layer.
-- Use `claude-context` as the main reference for codebase indexing and semantic code search.
-- Use `engram` as a reference for local SQLite, FTS, MCP, CLI, and TUI patterns.
-- Use `claude-mem` as a reference for Claude Code summarization, worker service, and progressive disclosure UX.
-- Use `mem0` as a reference for long-term memory concepts, entity-scoped memory, decay, graph memory, and API design, but not as the first-version core.
+4. 工作记忆和长期记忆分层。
+   会话 / 轮次自动摘要可以作为工作记忆保存；正式长期记忆只从高价值内容中提升。
 
-## Product Principles
+5. 完整原文可保存，但默认不给模型看。
+   原始会话记录 / 原始归档可以作为证据存储，必要时加密；默认不参与普通注入。
 
-1. Local-first.
-   Each person deploys their own local instance. There is no centralized SaaS requirement for the first version.
+6. 敏感记忆读取要授权。
+   敏感内容可以本地加密保存，但智能体想读取正文前必须请求用户许可。
 
-2. Native-client experience.
-   Claude Code, Codex, and OpenClaw must keep their normal user experience. The memory system should be ambient and low-friction.
+7. 代码上下文属于记忆系统的一部分。
+   系统要能把项目记忆、代码库索引、文件 / 符号搜索、历史决策联系起来。
 
-3. Low-review burden.
-   The system should generate fewer, higher-value durable memory suggestions. The user should not be asked to review memory after every conversation.
+8. 复用优先。
+   这些能力不应该全部从零做。能复用开源仓库的地方先复用，再补我们自己的治理层。
 
-4. Working memory and durable memory are separate.
-   Automatic session summaries can be captured without review as working memory. Long-term structured memories should be promoted selectively.
+## 当前复用策略
 
-5. Source archive is not model context.
-   Full transcripts may be stored locally and encrypted, but raw transcripts should not be injected into model context by default.
+当前判断：不要从零做三端交互层，优先验证 `memsearch`。
 
-6. Sensitive data requires explicit access.
-   Sensitive memories may be locally encrypted, but agents must request permission before reading sensitive content.
+推荐复用分工：
 
-7. Code context is part of the memory system.
-   The system must connect project memory, codebase indexing, file/symbol search, and historical decisions.
+- `memsearch`：作为 Claude Code / Codex / OpenClaw 三端自动捕获和召回的第一候选底座。
+- `claude-context`：作为代码库语义索引、文件 / 符号搜索、MCP 代码搜索的主要参考。
+- `engram`：作为本地 SQLite、FTS、MCP、CLI、TUI、诊断能力的参考。
+- `claude-mem`：作为 Claude Code 自动压缩、状态展示、渐进式上下文体验的参考。
+- `mem0`：作为长期记忆模型、实体作用域、记忆衰减、图谱和 API 的参考，不作为第一版核心依赖。
 
-## Roadmap
+## 阶段路线
 
-### Phase 0: Repository Setup and Evidence Collection
+### 阶段 0：仓库建立和资料沉淀
 
-Status: in progress.
+状态：已完成基础搭建。
 
-Goals:
+目标：
 
-- Create the GitHub remote repository under the `zhuzhen-team` organization.
-- Unpack the existing reference materials into this repository.
-- Record the current conversation decisions in roadmap and detailed plan documents.
-- Keep the original reference documents available for future review.
+- 在 `zhuzhen-team` 组织下创建远程 GitHub 仓库。
+- 解压已有参考资料。
+- 删除已解压完成的原始压缩包。
+- 把当前对话中的需求、边界、复用判断和路线沉淀到文档。
 
-Inputs now present in this repository:
+当前资料：
 
-- `记忆系统设计/`: earlier design research and decision documents.
-- `记忆库/`: mcp-memory-service based installation package.
-- `记忆系统设计.zip`: original design archive.
-- `记忆系统安装包.tar(1).gz`: original installation archive.
+- `记忆系统设计/`：早期设计调研文档。
+- `记忆库/`：基于 `mcp-memory-service` 的安装包内容，仅作为参考。
+- `docs/roadmap.md`：路线图。
+- `docs/detailed-plan.md`：详细计划和当前讨论沉淀。
 
-### Phase 1: Reuse Spike
+### 阶段 1：memsearch 三端复用验证
 
-Goal: verify whether `memsearch` can be reused directly as the three-client capture and recall substrate.
+目标：确认 `memsearch` 是否可以直接作为三端自动捕获和召回底座。
 
-Required checks:
+必须验证：
 
-- Install and run memsearch with Claude Code.
-- Install and run memsearch with Codex.
-- Install and run memsearch with OpenClaw.
-- Confirm normal tool usage is preserved.
-- Confirm session/turn summaries are created automatically.
-- Confirm the three clients share memory for the same project directory.
-- Confirm transcript drill-down works or document exact limitations.
-- Confirm OpenClaw non-default agent and channel limitations in the user's environment.
-- Confirm Codex hook behavior, especially `Stop` behavior and transcript path availability.
+- Claude Code 安装后能正常保持原有使用体验。
+- Codex 安装钩子后能正常保持原有使用体验。
+- OpenClaw 安装插件后能正常保持原有使用体验。
+- 三端能在同一个项目目录下共享工作记忆。
+- 自动生成每日 / 会话记忆。
+- 能进行搜索、展开、原文追溯。
+- Codex `Stop` 钩子、缺失 `transcript_path` 时的兜底机制是否可靠。
+- OpenClaw `agent_end`、非默认智能体、飞书 / 渠道模式等限制在真实环境里表现如何。
 
-Exit criteria:
+退出标准：
 
-- If memsearch works cleanly across the three clients, keep it as the capture and recall layer.
-- If one client is weak, fork or patch only that adapter.
-- If the architecture is incompatible with our long-term goals, preserve the plugin/hook learnings and implement our own adapter layer.
+- 如果三端都基本可用，则把 `memsearch` 保留为工作记忆层。
+- 如果某一端弱，则只修补该适配器，不重写全部系统。
+- 如果整体不适配长期目标，则保留其钩子 / 插件经验，转向自研适配器。
 
-### Phase 2: Working Memory Layer
+### 阶段 2：工作记忆层
 
-Goal: provide low-friction automatic memory without frequent user review.
+目标：提供低摩擦自动记忆，不频繁打扰用户。
 
-Scope:
+范围：
 
-- Daily/session memory generated automatically from agent sessions.
-- Per-project memory isolation.
-- Cross-client recall through shared project memory.
-- Progressive recall: search, expand, transcript drill-down.
-- Recent memory injection or hinting at session start.
+- 自动捕获会话 / 轮次摘要。
+- 按项目 / 工作区隔离。
+- 跨 Claude Code、Codex、OpenClaw 共享。
+- 支持渐进召回：搜索、展开、追溯原文。
+- 支持最近记忆提示或冷启动注入。
 
-Important boundary:
+边界：
 
-- Working memory does not need approval.
-- Working memory is not the same as formal durable memory.
-- Working memory is allowed to be noisy within limits, but should remain summarized and searchable.
+- 工作记忆不需要逐条审核。
+- 工作记忆不是正式长期记忆。
+- 工作记忆允许有一定噪声，但必须是摘要化、可检索、可回溯的。
 
-### Phase 3: Durable Memory Promotion
+### 阶段 3：正式长期记忆提升
 
-Goal: promote only important information from working memory into structured long-term memory.
+目标：只把真正重要的信息从工作记忆提升为结构化长期记忆。
 
-Promotion candidates:
+提升对象：
 
-- Stable global preferences.
-- Project-level preferences.
-- Project facts.
-- Decisions and reasons.
-- Reusable workflows.
-- Warnings and failure patterns.
-- Important code context.
-- Temporary context with TTL.
+- 稳定全局偏好。
+- 项目级偏好。
+- 项目事实。
+- 决策和理由。
+- 可复用工作流。
+- 失败模式和警告。
+- 重要代码上下文。
+- 有 TTL 的临时上下文。
 
-User experience:
+用户体验：
 
-- Do not ask the user to approve after every session.
-- Support conversation-based approval when an agent identifies an important candidate.
-- Support periodic digest approval, such as daily or weekly.
-- Support manual commands like "remember this" or "promote this decision".
+- 不每次对话后审核。
+- 智能体发现重要候选时，可以在对话里轻量询问。
+- 支持每日 / 每周 / 里程碑式摘要审核。
+- 支持用户主动说“记住这个”“把这个提升为决策”。
 
-### Phase 4: Structured Memory and Governance
+### 阶段 4：结构化记忆和治理层
 
-Goal: add the structure and safety that memsearch alone does not provide.
+目标：补齐 `memsearch` 不负责的长期治理能力。
 
-Required capabilities:
+需要能力：
 
-- Memory types.
-- Global vs project scope.
-- Source attribution.
-- Confidence and importance.
-- TTL and expiration.
-- Supersede relationships for decisions.
-- Sensitive memory classification.
-- Sensitive access requests and audit log.
-- Rejection or deletion workflows.
-- Export and backup.
+- 记忆类型。
+- 全局 / 项目 / 任务作用域。
+- 来源追踪。
+- 置信度和重要性。
+- TTL 和过期。
+- 决策取代关系。
+- 敏感记忆分类。
+- 敏感读取授权和审计日志。
+- 拒绝 / 删除 / 合并机制。
+- JSON / Markdown 导出和备份。
 
-### Phase 5: Code Context Integration
+### 阶段 5：代码上下文集成
 
-Goal: integrate codebase indexing with project memory.
+目标：把代码库索引纳入记忆系统，而不是只做对话记忆。
 
-Core capabilities:
+核心能力：
 
-- Repo indexing.
-- File/chunk search.
-- Symbol extraction.
-- Semantic code search.
-- Links between decisions, tasks, and files.
-- Recommended context bundle for agent task startup.
+- 仓库索引。
+- 文件 / 切块搜索。
+- 符号提取。
+- 语义代码搜索。
+- 决策、任务、文件之间的关联。
+- 智能体开始任务前的推荐上下文包。
 
-Reference:
+参考对象：
 
-- `claude-context` should be evaluated as the primary source for code indexing architecture and implementation reuse.
+- 重点评估 `claude-context` 的代码索引、MCP、VS Code 扩展、AST / 切分器设计。
 
-### Phase 6: Project Management System Integration
+### 阶段 6：接入完整项目管理系统
 
-Goal: connect this memory system to the broader project management system.
+目标：让项目管理系统调用记忆系统，而不是把记忆逻辑硬塞进项目管理系统。
 
-Responsibilities:
+职责：
 
-- Project and task namespace mapping.
-- Active task context.
-- Task completion summary ingestion.
-- Memory-aware task startup.
-- Evidence and review handoff.
-- OpenClaw runner integration through the generic agent/runner API.
+- 项目 / 任务命名空间映射。
+- 当前任务上下文。
+- 任务完成摘要写入。
+- 智能体启动前的上下文包构建。
+- 证据和审核交接。
+- OpenClaw 执行器通过通用智能体 / 执行器 API 接入。
 
-Boundary:
+边界：
 
-- The memory system is not the project management system.
-- It provides context, memory, retrieval, and evidence services to the project management system.
+- 记忆系统不是任务管理系统本体。
+- 它只提供上下文、记忆、检索、证据和治理能力。
 
-## First-Version Non-Goals
+## 第一版明确不做
 
-- No centralized SaaS.
-- No multi-user shared database.
-- No automatic promotion of all conversations into formal long-term memory.
-- No default injection of raw transcript into model context.
-- No mandatory wrapper command for normal Claude Code, Codex, or OpenClaw usage.
-- No dependency on Docker, Milvus server, or other heavy external infrastructure unless the reuse spike proves it is necessary and acceptable.
-- No deep Claude Desktop automation in the first version.
+- 不做中心化 SaaS。
+- 不做多人共享同一个数据库。
+- 不默认把所有对话提升为正式长期记忆。
+- 不默认把完整原文注入模型上下文。
+- 不强制用户通过包装命令启动 Claude Code、Codex、OpenClaw。
+- 不把 Claude Desktop 深度自动捕获作为第一版目标。
+- 不在没有验证前重写三端适配器。
 
-## Open Questions
+## 当前待确认问题
 
-- Whether to keep memsearch Markdown as the working-memory source of truth while using SQLite for structured durable memory.
-- Whether to fork memsearch or treat it as an external dependency.
-- How strict the durable memory promotion threshold should be.
-- Whether periodic digest approval should be daily, weekly, or triggered by important project milestones.
-- How the project management system will expose active task context to the memory system.
+- `memsearch` 是作为外部依赖、分叉版本，还是嵌入子模块。
+- 工作记忆的 Markdown 事实源和结构化 SQLite 长期记忆如何同步。
+- 正式长期记忆的提升阈值需要多保守。
+- 摘要审核按日、按周，还是按项目里程碑触发。
+- 项目管理系统如何把当前任务上下文传给记忆系统。
+- 敏感记忆授权如何在 Claude Code、Codex、OpenClaw 三端里保持自然体验。
