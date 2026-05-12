@@ -127,6 +127,9 @@ def cmd_capture(args: argparse.Namespace) -> int:
     except json.JSONDecodeError as e:
         print(f"error: invalid JSON on stdin: {e}", file=sys.stderr)
         return 2
+    if not isinstance(payload, dict):
+        print(f"error: expected JSON object, got {type(payload).__name__}", file=sys.stderr)
+        return 2
     path = capture_session(payload)
     print(f"captured -> {path}", file=sys.stderr)
     return 0

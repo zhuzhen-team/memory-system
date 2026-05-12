@@ -87,3 +87,17 @@ def test_main_reads_payload_from_stdin(memory_root: Path, tmp_path: Path, monkey
     sh = scope_hash(resolve_scope_root(cwd))
     files = list_sessions(memory_root, scope_hash=sh)
     assert len(files) == 1
+
+
+def test_main_rejects_non_dict_json(memory_root: Path, tmp_path: Path):
+    """A valid-JSON-but-not-dict payload should exit 2, not crash."""
+    proc = subprocess.run(
+        ["uv", "run", "memoryd", "capture"],
+        input='["a", "b"]',  # valid JSON, not a dict
+        capture_output=True,
+        text=True,
+        cwd="/Users/abble/project-management-personal/memoryd",
+        env={**os.environ, "MEMORYD_DATA_ROOT": str(memory_root)},
+    )
+    assert proc.returncode == 2, f"expected 2, got {proc.returncode}; stderr: {proc.stderr}"
+    assert "JSON object" in proc.stderr or "expected" in proc.stderr.lower()
