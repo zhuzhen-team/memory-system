@@ -18,6 +18,8 @@ def test_save_then_load_roundtrip(memory_root: Path, sample_session: SessionMemo
     assert loaded.frontmatter.title == sample_session.frontmatter.title
     assert loaded.frontmatter.triggers == sample_session.frontmatter.triggers
     assert "logo 方向" in loaded.body
+    assert loaded.frontmatter.slug == sample_session.frontmatter.slug
+    assert loaded.frontmatter.scope_hash == sample_session.frontmatter.scope_hash
 
 
 def test_list_sessions_filters_by_scope(memory_root: Path, sample_session: SessionMemory):

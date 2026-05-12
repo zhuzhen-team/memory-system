@@ -10,7 +10,7 @@ from pathlib import Path
 from .schema import SessionMemory
 
 
-def _scope_dir(root: Path, scope_hash: str) -> Path:
+def _sessions_dir(root: Path, scope_hash: str) -> Path:
     return root / "scopes" / scope_hash / "sessions"
 
 
@@ -19,9 +19,9 @@ def save_session(root: Path, session: SessionMemory) -> Path:
 
     Returns the path written. Creates parent dirs as needed.
     """
-    scope_dir = _scope_dir(root, session.frontmatter.scope_hash)
-    scope_dir.mkdir(parents=True, exist_ok=True)
-    path = scope_dir / f"{session.frontmatter.slug}.md"
+    sessions_dir = _sessions_dir(root, session.frontmatter.scope_hash)
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    path = sessions_dir / f"{session.frontmatter.slug}.md"
     path.write_text(session.to_markdown(), encoding="utf-8")
     return path
 
@@ -33,8 +33,8 @@ def load_session(path: Path) -> SessionMemory:
 
 
 def list_sessions(root: Path, scope_hash: str) -> list[Path]:
-    """List all session markdown files for a given scope."""
-    scope_dir = _scope_dir(root, scope_hash)
-    if not scope_dir.exists():
+    """List all session markdown files for a given scope, sorted by filename (chronological because slugs are date-prefixed)."""
+    sessions_dir = _sessions_dir(root, scope_hash)
+    if not sessions_dir.exists():
         return []
-    return sorted(scope_dir.glob("*.md"))
+    return sorted(sessions_dir.glob("*.md"))
