@@ -1,0 +1,66 @@
+"""MCP server tests (in-process).
+
+API adaptation note (mcp v1.27.1):
+  FastMCP.call_tool(name, arguments) returns a TUPLE:
+    (content_blocks: list[ContentBlock], structured: dict)
+  - content_blocks: list of TextContent items, one JSON blob per SearchResult hit
+  - structured:     {'result': [<raw dicts>]}  (empty list when no hits)
+  The spec example treated result as a flat sequence; we unpack the tuple instead.
+"""
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+
+from memoryd.schema import Frontmatter, SessionMemory
+from memoryd.storage import save_session
+
+
+@pytest.fixture
+def server_with_data(memory_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """Build a memoryd MCP server pointed at a temp memory root with sample data."""
+    monkeypatch.setenv("MEMORYD_DATA_ROOT", str(memory_root))
+
+    s = SessionMemory(
+        frontmatter=Frontmatter(
+            title="logo 讨论",
+            slug="2026-05-09-logo",
+            type="session",
+            scope_hash="test_scope",
+            triggers=["logo", "wolin"],
+            source="claude-code",
+            created_at=datetime(2026, 5, 9),
+        ),
+        body="深蓝+银灰方向已定。\n",
+    )
+    save_session(memory_root, s)
+
+    # Import after env vars set so server picks up the path
+    from memoryd.server import build_server
+    return build_server()
+
+
+@pytest.mark.asyncio
+async def test_search_memory_returns_matching_session(server_with_data):
+    server = server_with_data
+    # mcp v1.27.1: call_tool returns (content_blocks, structured_dict)
+    content_blocks, structured = await server.call_tool(
+        "search_memory", {"query": "深蓝", "scope_hash": "test_scope"}
+    )
+    # Flatten all text to a single blob for assertion
+    text_blob = "".join(str(item) for item in content_blocks)
+    # The title "logo 讨论" should appear in the JSON output
+    assert "logo 讨论" in text_blob
+
+
+@pytest.mark.asyncio
+async def test_search_memory_empty_when_no_match(server_with_data):
+    server = server_with_data
+    # mcp v1.27.1: call_tool returns (content_blocks, structured_dict)
+    content_blocks, structured = await server.call_tool(
+        "search_memory",
+        {"query": "不存在的关键词xyz", "scope_hash": "test_scope"},
+    )
+    # No hits → content_blocks is empty list; structured['result'] is []
+    assert content_blocks == []
+    assert structured.get("result") == []
