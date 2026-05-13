@@ -1,0 +1,2 @@
+[2026-05-13T21:13:20+08:00] Task 4 done: created ~/.codex/hooks.json with Stop hook -> codex-stop-hook.sh (async:true). Backup: ~/.claude/backups/codex.config.toml.bak.* (config.toml unchanged; hooks.json was absent, no backup needed). No /Applications path required — Codex.app reads ~/.codex/* on launch.
+[2026-05-13T21:13:20+08:00] Task 5 SKIPPED: OpenClaw not installed locally; plugin source kept at scripts/openclaw-memoryd-plugin/ for future install on machines with OpenClaw.
