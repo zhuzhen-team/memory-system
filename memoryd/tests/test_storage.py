@@ -1,4 +1,5 @@
 """Storage layer tests."""
+import pytest
 from pathlib import Path
 
 from memoryd.schema import SessionMemory
@@ -30,3 +31,18 @@ def test_list_sessions_filters_by_scope(memory_root: Path, sample_session: Sessi
 
     found_other_scope = list_sessions(memory_root, scope_hash="zzz999")
     assert len(found_other_scope) == 0
+
+
+def test_save_rejects_traversal_slug(memory_root: Path, sample_session: SessionMemory):
+    """save_session must reject slugs with path separators or '..' even if a caller bypasses cli sanitization."""
+    bad = sample_session.model_copy(deep=True)
+    bad.frontmatter.slug = "../../etc/passwd"
+    with pytest.raises(ValueError, match="slug"):
+        save_session(memory_root, bad)
+
+
+def test_save_rejects_slug_with_double_dots(memory_root: Path, sample_session: SessionMemory):
+    bad = sample_session.model_copy(deep=True)
+    bad.frontmatter.slug = "valid..but..dotted"
+    with pytest.raises(ValueError, match="slug"):
+        save_session(memory_root, bad)

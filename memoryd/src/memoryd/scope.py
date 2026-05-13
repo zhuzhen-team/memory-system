@@ -20,6 +20,13 @@ def resolve_scope_root(start: Path) -> Path:
 
 
 def scope_hash(path: str | Path) -> str:
-    """Stable 12-char sha1 prefix of the absolute scope root path."""
+    """Stable 12-char sha1 prefix of the given path after resolution.
+
+    NOTE: does NOT call `resolve_scope_root` internally. Callers that want
+    the hash of a scope root must pre-resolve, e.g.
+    `scope_hash(resolve_scope_root(cwd))`. Passing different non-root paths
+    yields different hashes — this is intentional but the caller's
+    responsibility to align with the scope concept.
+    """
     abs_path = str(Path(path).resolve())
     return hashlib.sha1(abs_path.encode("utf-8")).hexdigest()[:12]

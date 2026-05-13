@@ -13,7 +13,7 @@ set -euo pipefail
 # globally or moved the venv.
 MEMORYD_BIN="${MEMORYD_BIN:-/Users/abble/project-management-personal/memoryd/.venv/bin/memoryd}"
 
-# Fail early with a clear message if the bin really isn't there
+# Log and skip silently if the bin isn't there — we never block CC's exit
 if [[ ! -x "$MEMORYD_BIN" ]]; then
     echo "[$(date -Iseconds)] cc-session-end-hook: memoryd binary not executable at $MEMORYD_BIN" \
         >> "${MEMORYD_DATA_ROOT:-$HOME/.local/share/memoryd}/logs/cc-session-end.log" 2>/dev/null || true

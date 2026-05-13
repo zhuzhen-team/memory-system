@@ -5,6 +5,7 @@ Layout:
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .schema import SessionMemory
@@ -14,11 +15,24 @@ def _sessions_dir(root: Path, scope_hash: str) -> Path:
     return root / "scopes" / scope_hash / "sessions"
 
 
+_SAFE_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_slug(slug: str) -> None:
+    """Reject slugs that could escape the sessions directory."""
+    if not _SAFE_SLUG_PATTERN.fullmatch(slug) or ".." in slug:
+        raise ValueError(
+            f"slug {slug!r} must match {_SAFE_SLUG_PATTERN.pattern} "
+            f"and not contain '..'"
+        )
+
+
 def save_session(root: Path, session: SessionMemory) -> Path:
     """Write a session to <root>/scopes/<hash>/sessions/<slug>.md.
 
     Returns the path written. Creates parent dirs as needed.
     """
+    _validate_slug(session.frontmatter.slug)
     sessions_dir = _sessions_dir(root, session.frontmatter.scope_hash)
     sessions_dir.mkdir(parents=True, exist_ok=True)
     path = sessions_dir / f"{session.frontmatter.slug}.md"
