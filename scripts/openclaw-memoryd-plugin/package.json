@@ -1,0 +1,17 @@
+{
+  "name": "@memoryd/openclaw-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenClaw plugin that captures agent_end sessions into memoryd (source=openclaw).",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "test": "node --test 'tests/*.mjs'"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
