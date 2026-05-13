@@ -1,0 +1,3 @@
+[2026-05-12T15:10:55+08:00] wired memoryd to ~/.claude/.mcp.json + settings.json SessionEnd hook
+[2026-05-12T15:14:04+08:00] plan 1 (walking skeleton) tasks 1-9 + 11 complete; awaiting user-run Task 10 (e2e)
+[2026-05-13T15:28:18+08:00] fix(wire-up): MCP server entry moved from ~/.claude/.mcp.json (wrong path) to ~/.claude.json mcpServers — CC reads only the latter; e2e test discovered search_memory not registered
