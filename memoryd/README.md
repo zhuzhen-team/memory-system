@@ -105,7 +105,21 @@ Restart Claude Code. Run `/mcp` and verify `memoryd` appears with `search_memory
    tmp.replace(p)
    ```
 
-3. Restart Codex. Run any turn; check `~/.local/share/memoryd/logs/codex-stop.log` for `ok`.
+3. Register memoryd as an MCP server in `~/.codex/config.toml`. This is the
+   recall side — without it Codex can write memories (via the Stop hook)
+   but cannot call `search_memory` to read them. Append (don't replace —
+   `config.toml` likely already has other `[mcp_servers.*]` tables):
+   ```toml
+   [mcp_servers.memoryd]
+   command = "/path/to/project-management-personal/memoryd/.venv/bin/memoryd-server"
+   args = []
+
+   [mcp_servers.memoryd.env]
+   MEMORYD_DATA_ROOT = "/Users/<you>/.local/share/memoryd"
+   ```
+   Validate the file after editing with `python3 -c "import tomllib; tomllib.loads(open('/Users/<you>/.codex/config.toml').read())"` (Python 3.11+).
+
+4. Restart Codex. Run any turn; check `~/.local/share/memoryd/logs/codex-stop.log` for `ok`. In a new Codex turn, verify the agent can use the `search_memory` tool (the MCP wiring is live).
 
 ## Wire into OpenClaw
 
