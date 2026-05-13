@@ -9,7 +9,7 @@ import pytest
 
 from memoryd.cli import capture_session
 from memoryd.scope import resolve_scope_root, scope_hash
-from memoryd.storage import list_sessions
+from memoryd.storage import list_sessions, load_session
 
 
 def _write_fake_transcript(transcript_path: Path) -> None:
@@ -122,3 +122,71 @@ def test_main_rejects_non_dict_json(memory_root: Path, tmp_path: Path):
     )
     assert proc.returncode == 2, f"expected 2, got {proc.returncode}; stderr: {proc.stderr}"
     assert "JSON object" in proc.stderr or "expected" in proc.stderr.lower()
+
+
+def test_capture_respects_source_param(memory_root: Path, tmp_path: Path):
+    """capture_session honors an explicit source value."""
+    transcript = tmp_path / "transcript.jsonl"
+    _write_fake_transcript(transcript)
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    payload = {
+        "session_id": "src-test-1",
+        "transcript_path": str(transcript),
+        "cwd": str(cwd),
+    }
+
+    capture_session(payload, memory_root=memory_root, now=datetime(2026, 5, 13, 10, 0), source="codex")
+    sh = scope_hash(cwd)
+    files = list_sessions(memory_root, scope_hash=sh)
+    assert len(files) == 1
+    sess = load_session(files[0])
+    assert sess.frontmatter.source == "codex"
+
+
+def test_capture_defaults_source_to_claude_code(memory_root: Path, tmp_path: Path):
+    """No source argument → default 'claude-code' for backward compat."""
+    transcript = tmp_path / "transcript.jsonl"
+    _write_fake_transcript(transcript)
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    payload = {
+        "session_id": "default-src-1",
+        "transcript_path": str(transcript),
+        "cwd": str(cwd),
+    }
+
+    capture_session(payload, memory_root=memory_root, now=datetime(2026, 5, 13, 10, 1))
+    sh = scope_hash(cwd)
+    files = list_sessions(memory_root, scope_hash=sh)
+    sess = load_session(files[0])
+    assert sess.frontmatter.source == "claude-code"
+
+
+def test_main_passes_source_flag_to_capture(memory_root: Path, tmp_path: Path):
+    """`memoryd capture --source openclaw` reaches capture_session."""
+    transcript = tmp_path / "transcript.jsonl"
+    _write_fake_transcript(transcript)
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    payload = {
+        "session_id": "stdin-source-test",
+        "transcript_path": str(transcript),
+        "cwd": str(cwd),
+    }
+
+    proc = subprocess.run(
+        ["uv", "run", "memoryd", "capture", "--source", "openclaw"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        cwd="/Users/abble/project-management-personal/memoryd",
+        env={**os.environ, "MEMORYD_DATA_ROOT": str(memory_root)},
+    )
+    assert proc.returncode == 0, f"stderr: {proc.stderr}"
+
+    sh = scope_hash(cwd)
+    files = list_sessions(memory_root, scope_hash=sh)
+    assert len(files) == 1
+    sess = load_session(files[0])
+    assert sess.frontmatter.source == "openclaw"
