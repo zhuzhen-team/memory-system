@@ -252,3 +252,47 @@ def test_mirror_without_source_flag_exits_2():
     )
     assert proc.returncode == 2
     assert "pass at least one" in proc.stderr
+
+
+def test_rebuild_index_recreates_db_from_markdown(memory_root: Path, tmp_path: Path):
+    """rebuild-index wipes index.db and re-walks all .md files."""
+    import subprocess
+    import os
+    from memoryd.index import open_index
+    from memoryd.schema import Frontmatter, SessionMemory
+    from memoryd.storage import save_memory
+
+    # save 3 memories; this auto-indexes them
+    for i in range(3):
+        save_memory(
+            memory_root,
+            SessionMemory(
+                frontmatter=Frontmatter(
+                    title=f"t{i}",
+                    slug=f"2026-05-14-x{i}",
+                    type="session",
+                    scope_hash="proj1",
+                    source="manual",
+                    created_at=datetime(2026, 5, 14),
+                ),
+                body=f"body {i}",
+            ),
+        )
+
+    # Delete the db to simulate corruption / first run
+    (memory_root / "index.db").unlink()
+
+    proc = subprocess.run(
+        ["uv", "run", "memoryd", "rebuild-index"],
+        capture_output=True,
+        text=True,
+        cwd="/Users/abble/project-management-personal/memoryd",
+        env={**os.environ, "MEMORYD_DATA_ROOT": str(memory_root)},
+        timeout=30,
+    )
+    assert proc.returncode == 0, f"stderr: {proc.stderr}"
+
+    idx = open_index(memory_root / "index.db")
+    rows = idx.conn.execute("SELECT slug FROM memories ORDER BY slug").fetchall()
+    assert [r[0] for r in rows] == ["2026-05-14-x0", "2026-05-14-x1", "2026-05-14-x2"]
+    idx.close()

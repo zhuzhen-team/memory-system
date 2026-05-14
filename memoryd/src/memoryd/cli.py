@@ -15,12 +15,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .index import open_index as _open_idx
 from .mirror import MirrorRouter
 from .mirror_codex import CodexRolloutHandler
 from .mirror_openclaw import OpenClawSessionHandler
 from .schema import Frontmatter, SessionMemory
 from .scope import resolve_scope_root, scope_hash
-from .storage import save_session
+from .storage import load_session, save_session
 from . import setup as setup_mod
 
 
@@ -226,6 +227,32 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rebuild_index(args: argparse.Namespace) -> int:
+    memory_root = _data_root()
+    db_path = memory_root / "index.db"
+    if db_path.exists():
+        db_path.unlink()
+    idx = _open_idx(db_path)
+    scopes_dir = memory_root / "scopes"
+    if not scopes_dir.exists():
+        idx.close()
+        print("rebuild-index: no scopes dir; nothing to do", file=sys.stderr)
+        return 0
+    count = 0
+    for md in scopes_dir.rglob("*.md"):
+        try:
+            mem = load_session(md)
+        except Exception as e:
+            print(f"skip {md}: {e}", file=sys.stderr)
+            continue
+        body_rel = str(md.relative_to(memory_root))
+        idx.index_memory(mem, body_path=body_rel)
+        count += 1
+    idx.close()
+    print(f"rebuild-index: {count} memories indexed", file=sys.stderr)
+    return 0
+
+
 def _cmd_swap_notify(args: argparse.Namespace) -> int:
     setup_mod.swap_codex_notify(
         to=args.to,
@@ -308,6 +335,9 @@ def main() -> int:
         help="scan existing files once and exit (no watchdog)",
     )
     p_mirror.set_defaults(func=cmd_mirror)
+
+    p_rebuild = subs.add_parser("rebuild-index", help="wipe and rebuild SQLite index from all Markdown files")
+    p_rebuild.set_defaults(func=cmd_rebuild_index)
 
     p_setup = subs.add_parser(
         "setup",
