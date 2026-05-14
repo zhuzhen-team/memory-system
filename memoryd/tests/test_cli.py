@@ -296,3 +296,27 @@ def test_rebuild_index_recreates_db_from_markdown(memory_root: Path, tmp_path: P
     rows = idx.conn.execute("SELECT slug FROM memories ORDER BY slug").fetchall()
     assert [r[0] for r in rows] == ["2026-05-14-x0", "2026-05-14-x1", "2026-05-14-x2"]
     idx.close()
+
+
+def test_capture_session_spawns_analyze(memory_root: Path, tmp_path: Path, monkeypatch):
+    """capture_session 完成后 fork memoryd analyze-session 后台。"""
+    from memoryd.cli import capture_session
+    spawned: list[list[str]] = []
+
+    def fake_popen(cmd, **kwargs):
+        spawned.append(list(cmd))
+        class _P:
+            pass
+        return _P()
+
+    monkeypatch.setattr("subprocess.Popen", fake_popen)
+
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text('{"type":"user","message":{"content":[{"type":"text","text":"hi"}]}}\n')
+    cwd = tmp_path / "proj"
+    cwd.mkdir()
+    payload = {"session_id": "sf-test", "transcript_path": str(transcript), "cwd": str(cwd)}
+
+    capture_session(payload, memory_root=memory_root, now=datetime(2026, 5, 14, 12, 0))
+
+    assert any("analyze-session" in cmd for cmd in spawned)

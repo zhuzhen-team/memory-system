@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,8 @@ from .scope import resolve_scope_root, scope_hash
 from .storage import load_session, save_session
 from . import setup as setup_mod
 from . import config as config_mod
+from .governance.analyze import analyze_session as _analyze_session
+from .llm import LLMUnavailable, get_provider
 
 
 DEFAULT_DATA_ROOT = Path.home() / ".local" / "share" / "memoryd"
@@ -131,7 +134,35 @@ def capture_session(
         ),
         body=body,
     )
-    return save_session(memory_root, session)
+    path = save_session(memory_root, session)
+    _spawn_analyze(session.frontmatter.slug)
+    return path
+
+
+def _spawn_analyze(session_slug: str) -> None:
+    """Background spawn `memoryd analyze-session <slug>`. Never blocks."""
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "memoryd", "analyze-session", session_slug],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
+def cmd_analyze_session(args: argparse.Namespace) -> int:
+    memory_root = _data_root()
+    try:
+        provider = get_provider()
+    except LLMUnavailable as e:
+        print(f"analyze-session skip: {e}", file=sys.stderr)
+        return 0
+    _analyze_session(memory_root, session_slug=args.session_slug, provider=provider)
+    print("analyze-session: ok", file=sys.stderr)
+    return 0
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
@@ -327,6 +358,10 @@ def main() -> int:
         help="origin tool tag written to frontmatter (claude-code | codex | openclaw | ...)",
     )
     p_capture.set_defaults(func=cmd_capture)
+
+    p_az = subs.add_parser("analyze-session", help="run DURA extraction on a session (called by capture hook)")
+    p_az.add_argument("session_slug")
+    p_az.set_defaults(func=cmd_analyze_session)
 
     p_mirror = subs.add_parser(
         "mirror",
