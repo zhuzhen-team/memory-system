@@ -75,8 +75,13 @@ def capture_session(
     *,
     memory_root: Path | None = None,
     now: datetime | None = None,
+    source: str = "claude-code",
 ) -> Path:
-    """Convert a SessionEnd hook payload into a SessionMemory markdown file."""
+    """Convert a SessionEnd hook payload into a SessionMemory markdown file.
+
+    `source` is recorded in frontmatter for downstream filtering. Conventional
+    values: claude-code | codex | openclaw | manual.
+    """
     if memory_root is None:
         memory_root = _data_root()
     if now is None:
@@ -115,7 +120,7 @@ def capture_session(
             type="session",
             scope_hash=sh,
             triggers=[],
-            source="claude-code",
+            source=source,
             created_at=now,
         ),
         body=body,
@@ -136,7 +141,7 @@ def cmd_capture(args: argparse.Namespace) -> int:
     if not isinstance(payload, dict):
         print(f"error: expected JSON object, got {type(payload).__name__}", file=sys.stderr)
         return 2
-    path = capture_session(payload)
+    path = capture_session(payload, source=args.source)
     print(f"captured -> {path}", file=sys.stderr)
     return 0
 
@@ -146,6 +151,11 @@ def main() -> int:
     subs = parser.add_subparsers(dest="cmd", required=True)
 
     p_capture = subs.add_parser("capture", help="read SessionEnd payload from stdin and save")
+    p_capture.add_argument(
+        "--source",
+        default="claude-code",
+        help="origin tool tag written to frontmatter (claude-code | codex | openclaw | ...)",
+    )
     p_capture.set_defaults(func=cmd_capture)
 
     args = parser.parse_args()

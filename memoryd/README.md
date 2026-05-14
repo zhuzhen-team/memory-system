@@ -6,7 +6,7 @@ Personal memory governance MCP server. Part of `project-management-personal`.
 
 Currently supports:
 - macOS only
-- Claude Code only (Codex / OpenClaw land in plan 2)
+- **Claude Code, Codex, and OpenClaw three clients share a single scope** (was: Claude Code only)
 - Single machine (multi-machine sync in plan 6)
 - Session capture only (decisions/preferences/promotions in plan 3)
 - Plain Markdown storage (encryption in plan 4)
@@ -70,6 +70,82 @@ tmp.replace(path)
 ```
 
 Restart Claude Code. Run `/mcp` and verify `memoryd` appears with `search_memory` tool.
+
+## Wire into Codex
+
+> Codex doesn't have a `SessionEnd` event; we hook the `Stop` event, which
+> fires when a turn finishes. Multiple turns in one Codex session will
+> overwrite the same `<date>-<session_id>.md` file — the last turn's
+> summary wins. Long-term governance (incl. per-turn slugs or merged
+> summaries) lands in plan 3.
+
+1. Backup your current `~/.codex/hooks.json`:
+   ```bash
+   mkdir -p ~/.claude/backups
+   cp ~/.codex/hooks.json ~/.claude/backups/codex.hooks.json.bak.$(date +%Y%m%d-%H%M%S) 2>/dev/null || echo "no existing hooks.json"
+   ```
+
+2. Merge the Stop hook into `~/.codex/hooks.json` (use Python so other hooks survive):
+   ```python
+   import json
+   from pathlib import Path
+   p = Path.home() / ".codex" / "hooks.json"
+   p.parent.mkdir(parents=True, exist_ok=True)
+   d = json.loads(p.read_text()) if p.exists() else {}
+   d.setdefault("hooks", {}).setdefault("Stop", []).append({
+       "hooks": [{
+           "type": "command",
+           "command": "/path/to/project-management-personal/scripts/codex-stop-hook.sh",
+           "async": True,
+           "statusMessage": "memoryd capture (codex)"
+       }]
+   })
+   tmp = p.with_suffix(".json.tmp")
+   tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False))
+   tmp.replace(p)
+   ```
+
+3. Register memoryd as an MCP server in `~/.codex/config.toml`. This is the
+   recall side — without it Codex can write memories (via the Stop hook)
+   but cannot call `search_memory` to read them. Append (don't replace —
+   `config.toml` likely already has other `[mcp_servers.*]` tables):
+   ```toml
+   [mcp_servers.memoryd]
+   command = "/path/to/project-management-personal/memoryd/.venv/bin/memoryd-server"
+   args = []
+
+   [mcp_servers.memoryd.env]
+   MEMORYD_DATA_ROOT = "/Users/<you>/.local/share/memoryd"
+   ```
+   Validate the file after editing with `python3 -c "import tomllib; tomllib.loads(open('/Users/<you>/.codex/config.toml').read())"` (Python 3.11+).
+
+4. Restart Codex. Run any turn; check `~/.local/share/memoryd/logs/codex-stop.log` for `ok`. In a new Codex turn, verify the agent can use the `search_memory` tool (the MCP wiring is live).
+
+## Wire into OpenClaw
+
+> The OpenClaw plugin lives under `scripts/openclaw-memoryd-plugin/`. It
+> registers on the `agent_end` lifecycle hook and requires the
+> `allowConversationAccess` permission to read turn data.
+
+1. Install the plugin:
+   ```bash
+   cd /path/to/project-management-personal/scripts/openclaw-memoryd-plugin
+   openclaw plugins install --force .
+   ```
+
+2. Grant conversation read permission (the plugin does NOT inject prompts):
+   ```bash
+   # Replace <ENTRY_KEY> with what `openclaw plugins install` printed
+   openclaw config set plugins.entries.<ENTRY_KEY>.hooks.allowConversationAccess true
+   openclaw config set plugins.entries.<ENTRY_KEY>.hooks.allowPromptInjection false
+   ```
+
+3. Run any OpenClaw turn; check `~/.local/share/memoryd/logs/openclaw-agent-end.log` for `ok`.
+
+**Note on OpenClaw backend agent:** Whatever backend agent OpenClaw routes
+your messages to (Claude Code, GPT, etc.), this plugin captures the turn
+from OpenClaw's view — so memories written via OpenClaw appear with
+`source: openclaw`, distinct from the same backend's native source tag.
 
 ## Layout
 
