@@ -124,3 +124,54 @@ def test_search_skips_corrupt_files(memory_root: Path, sample_session: SessionMe
     # Should find the good session, ignoring the corrupt one
     assert len(hits) == 1
     assert hits[0].title == sample_session.frontmatter.title
+
+
+def test_search_filters_by_type(populated_root: Path):
+    from memoryd.storage import save_memory
+    from memoryd.schema import Frontmatter, SessionMemory
+
+    # add a decision in same scope
+    save_memory(populated_root, SessionMemory(
+        frontmatter=Frontmatter(
+            title="logo decision",
+            slug="2026-05-14-logo-decision",
+            type="decision",
+            scope_hash="scope_a",
+            triggers=["logo"],
+            source="manual",
+            created_at=datetime(2026, 5, 14),
+        ),
+        body="深蓝+银灰",
+    ))
+
+    sessions_only = search_sessions(populated_root, scope_hash="scope_a", query="logo", type_="session")
+    decisions_only = search_sessions(populated_root, scope_hash="scope_a", query="logo", type_="decision")
+
+    titles_s = {h.title for h in sessions_only}
+    titles_d = {h.title for h in decisions_only}
+    assert "logo decision" not in titles_s
+    assert "logo decision" in titles_d
+
+
+def test_search_excludes_soft_forgotten_by_default(populated_root: Path):
+    from memoryd.index import open_index
+
+    idx = open_index(populated_root / "index.db")
+    idx.update_decay_state("2026-05-09-logo", "soft-forgotten")
+    idx.close()
+
+    hits = search_sessions(populated_root, scope_hash="scope_a", query="深蓝")
+    assert all(h.slug != "2026-05-09-logo" for h in hits)
+
+    hits_all = search_sessions(populated_root, scope_hash="scope_a", query="深蓝", include_decayed=True)
+    assert any(h.slug == "2026-05-09-logo" for h in hits_all)
+
+
+def test_search_bumps_recall_count_on_hit(populated_root: Path):
+    from memoryd.index import open_index
+
+    search_sessions(populated_root, scope_hash="scope_a", query="深蓝")
+    idx = open_index(populated_root / "index.db")
+    row = idx.get_memory("2026-05-09-logo")
+    assert row["recall_count"] >= 1
+    idx.close()

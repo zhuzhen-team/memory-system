@@ -213,11 +213,82 @@ probe/
 uv run pytest -v
 ```
 
+## Long-term memory governance (Plan 3)
+
+### LLM 配置
+
+Plan 3 用 LLM 做 4 准则候选筛选。默认 Anthropic Claude Haiku 4.5。
+
+```bash
+# 1. 把 API key 写到 shell rc（~/.zshrc / ~/.bashrc）
+export ANTHROPIC_API_KEY=sk-ant-xxx
+
+# 2.（可选）改 provider / model
+memoryd config show
+memoryd config set llm.model claude-sonnet-4-6
+```
+
+如果不配 API key，capture 仍正常工作，只是不会自动跑 DURA → 不生成 promotion 候选。可以手动跑 `memoryd analyze-session <slug>` 重试。
+
+### 类型扩展
+
+会话 capture 走 `source` tag 路径（Plan 1-2.5）；长期记忆走 6 种类型：
+
+| 类型 | 何时用 | TTL |
+|---|---|---|
+| session | 自动捕获摘要 | 90 天 → decay |
+| decision | 用户明确决策 | 永不过期 |
+| preference | 工作偏好 | 永不过期 |
+| fact | 客观事实 | 永不过期 |
+| playbook | 操作流程 | 永不过期 |
+| warning | 踩过的坑 | 永不过期 |
+
+智能体在会话中说"记一下这个决策"→ 调 `promote_to_long_term` 或 `record_long_term` MCP 工具自动写。
+
+### Digest 复盘
+
+每周（默认）跑：
+
+```bash
+memoryd digest                  # 文本视图
+memoryd digest --json           # JSON（脚本调用）
+```
+
+三栏：
+- **候选提升**：DURA ≥ 0.6 的 LLM 推荐
+- **重复合并**：fingerprint 相同的条目对
+- **TTL 到期**：进 dim / soft-forgotten 的提醒
+
+合并：
+```bash
+memoryd merge --keep <good-slug> --drop <bad-slug-1> <bad-slug-2>
+```
+
+### Decay / soft-forget
+
+session 90 天没召回 → `dim`；再 30 天 → `soft-forgotten`（默认 search 不返回）；再 90 天 → 物理迁到 `forgotten/`。手动跑：
+
+```bash
+memoryd decay-sweep
+```
+
+Plan 5 会加 cron 自动每天跑。
+
+### MCP 工具清单（7/12）
+
+| # | 工具 | 用途 |
+|---|---|---|
+| 1 | search_memory | 全文 + trigger + type 过滤 |
+| 2 | promote_to_long_term | 把 session 段提升为长期记忆 |
+| 3 | record_long_term | 直接写长期记忆（不通过 session） |
+| 4 | list_by_type | 列单类型 |
+| 5 | get_memory | 取详情 |
+| 6 | list_promotions | 列待审批候选 |
+| 7 | merge_duplicates | 合并 |
+
 ## Limitations of v1.0-α
 
-- Naive truncation summary (no LLM call). Plan 3 replaces with 4-criteria filter.
-- No SQLite index — all search via ripgrep. Plan 3 adds SQLite for type filters.
-- No encryption. Don't put secrets here in plan 1.
-- No sync. Single-machine only.
+- No encryption. Don't put secrets here.
+- macOS only. Multi-machine sync in plan 6.
 
 See `docs/superpowers/plans/2026-05-09-v1-alpha-walking-skeleton.md` for full plan history; subsequent plans live alongside it.

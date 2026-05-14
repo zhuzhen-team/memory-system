@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from memoryd.schema import SessionMemory, Frontmatter
+from memoryd.schema import Frontmatter, MemoryType, SessionMemory
 
 
 def test_frontmatter_required_fields():
@@ -84,3 +84,81 @@ def test_from_markdown_rejects_non_dict_frontmatter():
     # Scalar
     with pytest.raises(ValueError, match="must be a mapping"):
         SessionMemory.from_markdown("---\njust a string\n---\n\nbody\n")
+
+
+def test_memory_type_supports_six_kinds():
+    """All six types accepted by Frontmatter."""
+    for kind in ("session", "decision", "preference", "fact", "playbook", "warning"):
+        fm = Frontmatter(
+            title="t",
+            slug=f"2026-05-14-{kind}",
+            type=kind,
+            scope_hash="h",
+            source="manual",
+            created_at=datetime(2026, 5, 14),
+        )
+        assert fm.type == kind
+
+
+def test_frontmatter_accepts_new_governance_fields():
+    fm = Frontmatter(
+        title="t",
+        slug="2026-05-14-x",
+        type="decision",
+        scope_hash="h",
+        source="manual",
+        created_at=datetime(2026, 5, 14),
+        promoted_from="2026-05-13-session-abc",
+        supersedes=["2026-04-30-old"],
+        ttl_days=90,
+        decay_state="alive",
+        last_recalled_at=datetime(2026, 5, 13),
+        recall_count=3,
+        dura_score={"D": 0.85, "U": 0.92, "R": 0.78, "A": 0.95},
+    )
+    assert fm.promoted_from == "2026-05-13-session-abc"
+    assert fm.supersedes == ["2026-04-30-old"]
+    assert fm.ttl_days == 90
+    assert fm.decay_state == "alive"
+    assert fm.recall_count == 3
+    assert fm.dura_score["D"] == 0.85
+
+
+def test_frontmatter_new_fields_all_optional():
+    """Plan 1-2.5 frontmatter still parses (zero new fields)."""
+    fm = Frontmatter(
+        title="legacy",
+        slug="2026-04-01-legacy",
+        type="session",
+        scope_hash="h",
+        source="claude-code",
+        created_at=datetime(2026, 4, 1),
+    )
+    assert fm.promoted_from is None
+    assert fm.supersedes == []
+    assert fm.ttl_days is None
+    assert fm.decay_state == "alive"  # default value
+    assert fm.recall_count == 0       # default value
+    assert fm.dura_score is None
+
+
+def test_session_roundtrip_with_governance_fields():
+    s = SessionMemory(
+        frontmatter=Frontmatter(
+            title="logo decision",
+            slug="2026-05-14-logo",
+            type="decision",
+            scope_hash="h",
+            source="manual",
+            created_at=datetime(2026, 5, 14),
+            ttl_days=None,
+            dura_score={"D": 0.9, "U": 0.9, "R": 0.8, "A": 1.0},
+            supersedes=["2026-04-30-old-logo"],
+        ),
+        body="深蓝+银灰",
+    )
+    md = s.to_markdown()
+    parsed = SessionMemory.from_markdown(md)
+    assert parsed.frontmatter.type == "decision"
+    assert parsed.frontmatter.dura_score["D"] == 0.9
+    assert parsed.frontmatter.supersedes == ["2026-04-30-old-logo"]

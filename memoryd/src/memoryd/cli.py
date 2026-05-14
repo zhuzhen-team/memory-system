@@ -10,18 +10,23 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .index import open_index as _open_idx
 from .mirror import MirrorRouter
 from .mirror_codex import CodexRolloutHandler
 from .mirror_openclaw import OpenClawSessionHandler
 from .schema import Frontmatter, SessionMemory
 from .scope import resolve_scope_root, scope_hash
-from .storage import save_session
+from .storage import load_session, save_session
 from . import setup as setup_mod
+from . import config as config_mod
+from .governance.analyze import analyze_session as _analyze_session
+from .llm import LLMUnavailable, get_provider
 
 
 DEFAULT_DATA_ROOT = Path.home() / ".local" / "share" / "memoryd"
@@ -129,7 +134,35 @@ def capture_session(
         ),
         body=body,
     )
-    return save_session(memory_root, session)
+    path = save_session(memory_root, session)
+    _spawn_analyze(session.frontmatter.slug)
+    return path
+
+
+def _spawn_analyze(session_slug: str) -> None:
+    """Background spawn `memoryd analyze-session <slug>`. Never blocks."""
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "memoryd", "analyze-session", session_slug],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
+def cmd_analyze_session(args: argparse.Namespace) -> int:
+    memory_root = _data_root()
+    try:
+        provider = get_provider()
+    except LLMUnavailable as e:
+        print(f"analyze-session skip: {e}", file=sys.stderr)
+        return 0
+    _analyze_session(memory_root, session_slug=args.session_slug, provider=provider)
+    print("analyze-session: ok", file=sys.stderr)
+    return 0
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
@@ -226,6 +259,32 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rebuild_index(args: argparse.Namespace) -> int:
+    memory_root = _data_root()
+    db_path = memory_root / "index.db"
+    if db_path.exists():
+        db_path.unlink()
+    idx = _open_idx(db_path)
+    scopes_dir = memory_root / "scopes"
+    if not scopes_dir.exists():
+        idx.close()
+        print("rebuild-index: no scopes dir; nothing to do", file=sys.stderr)
+        return 0
+    count = 0
+    for md in scopes_dir.rglob("*.md"):
+        try:
+            mem = load_session(md)
+        except Exception as e:
+            print(f"skip {md}: {e}", file=sys.stderr)
+            continue
+        body_rel = str(md.relative_to(memory_root))
+        idx.index_memory(mem, body_path=body_rel)
+        count += 1
+    idx.close()
+    print(f"rebuild-index: {count} memories indexed", file=sys.stderr)
+    return 0
+
+
 def _cmd_swap_notify(args: argparse.Namespace) -> int:
     setup_mod.swap_codex_notify(
         to=args.to,
@@ -268,6 +327,56 @@ def _cmd_uninstall_launchd(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_decay_sweep(args: argparse.Namespace) -> int:
+    from .governance.decay import sweep_decay
+    counts = sweep_decay(_data_root())
+    print(
+        f"decay-sweep: to_dim={counts['to_dim']} "
+        f"to_soft_forgotten={counts['to_soft_forgotten']} "
+        f"to_forgotten_dir={counts['to_forgotten_dir']}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def cmd_merge(args: argparse.Namespace) -> int:
+    from .governance.merge import merge_memories
+    merge_memories(_data_root(), keep_slug=args.keep, drop_slugs=args.drop)
+    print(f"merge: keep={args.keep} drop={','.join(args.drop)}", file=sys.stderr)
+    return 0
+
+
+def cmd_digest(args: argparse.Namespace) -> int:
+    from .governance.digest import build_digest, render_digest_text
+    d = build_digest(_data_root())
+    if args.json:
+        import json as _j
+        print(_j.dumps(d, indent=2, ensure_ascii=False))
+    else:
+        print(render_digest_text(d))
+    return 0
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    if args.config_action == "show":
+        import json as _j
+        print(_j.dumps(config_mod.show_config(), indent=2, ensure_ascii=False))
+    elif args.config_action == "set":
+        # try to coerce value to int/float/bool/str
+        v: object = args.value
+        try:
+            v = int(args.value)
+        except ValueError:
+            try:
+                v = float(args.value)
+            except ValueError:
+                if args.value.lower() in ("true", "false"):
+                    v = args.value.lower() == "true"
+        config_mod.set_config_key(args.key, v)
+        print(f"set {args.key} = {v!r}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="memoryd")
     subs = parser.add_subparsers(dest="cmd", required=True)
@@ -279,6 +388,10 @@ def main() -> int:
         help="origin tool tag written to frontmatter (claude-code | codex | openclaw | ...)",
     )
     p_capture.set_defaults(func=cmd_capture)
+
+    p_az = subs.add_parser("analyze-session", help="run DURA extraction on a session (called by capture hook)")
+    p_az.add_argument("session_slug")
+    p_az.set_defaults(func=cmd_analyze_session)
 
     p_mirror = subs.add_parser(
         "mirror",
@@ -308,6 +421,9 @@ def main() -> int:
         help="scan existing files once and exit (no watchdog)",
     )
     p_mirror.set_defaults(func=cmd_mirror)
+
+    p_rebuild = subs.add_parser("rebuild-index", help="wipe and rebuild SQLite index from all Markdown files")
+    p_rebuild.set_defaults(func=cmd_rebuild_index)
 
     p_setup = subs.add_parser(
         "setup",
@@ -342,6 +458,26 @@ def main() -> int:
     p_un = setup_subs.add_parser("uninstall-launchd-mirror")
     p_un.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
     p_un.set_defaults(func=_cmd_uninstall_launchd)
+
+    p_decay = subs.add_parser("decay-sweep", help="step memories through alive→dim→soft-forgotten state machine")
+    p_decay.set_defaults(func=cmd_decay_sweep)
+
+    p_merge = subs.add_parser("merge", help="merge dup memories (keep one, drop others)")
+    p_merge.add_argument("--keep", required=True)
+    p_merge.add_argument("--drop", nargs="+", required=True)
+    p_merge.set_defaults(func=cmd_merge)
+
+    p_digest = subs.add_parser("digest", help="show weekly digest (promotions / duplicates / decayed)")
+    p_digest.add_argument("--json", action="store_true")
+    p_digest.set_defaults(func=cmd_digest)
+
+    p_config = subs.add_parser("config", help="show / set memoryd config")
+    cfg_subs = p_config.add_subparsers(dest="config_action", required=True)
+    cfg_subs.add_parser("show", help="print resolved config as JSON")
+    p_set = cfg_subs.add_parser("set", help="set a dotted key (e.g. llm.provider openai)")
+    p_set.add_argument("key")
+    p_set.add_argument("value")
+    p_config.set_defaults(func=cmd_config)
 
     args = parser.parse_args()
     return args.func(args)

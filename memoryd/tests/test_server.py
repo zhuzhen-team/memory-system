@@ -77,3 +77,49 @@ async def test_search_memory_raises_when_no_scope(memory_root: Path, monkeypatch
         await server.call_tool("search_memory", {"query": "anything"})
     # FastMCP may wrap ValueError in its own error type; assert "scope_hash" appears in message
     assert "scope_hash" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_record_long_term_creates_decision(server_with_data):
+    server = server_with_data
+    result = await server.call_tool("record_long_term", {
+        "type": "decision",
+        "title": "logo choice",
+        "body": "deep blue",
+        "triggers": ["logo", "color"],
+        "scope_hash": "test_scope",
+    })
+    assert any("logo choice" in str(item) for item in result)
+
+
+@pytest.mark.asyncio
+async def test_list_by_type_filters(server_with_data):
+    server = server_with_data
+    # record one first
+    await server.call_tool("record_long_term", {
+        "type": "fact",
+        "title": "stack is FastAPI",
+        "body": "the API runs FastAPI",
+        "triggers": ["stack", "fastapi"],
+        "scope_hash": "test_scope",
+    })
+    result = await server.call_tool("list_by_type", {"type": "fact", "scope_hash": "test_scope"})
+    blob = "".join(str(item) for item in result)
+    assert "stack is FastAPI" in blob
+
+
+@pytest.mark.asyncio
+async def test_get_memory_returns_known_slug(server_with_data):
+    server = server_with_data
+    # The fixture data has slug "2026-05-09-logo"
+    result = await server.call_tool("get_memory", {"slug": "2026-05-09-logo"})
+    assert any("logo" in str(item).lower() for item in result)
+
+
+@pytest.mark.asyncio
+async def test_list_promotions_returns_empty_initially(server_with_data):
+    server = server_with_data
+    result = await server.call_tool("list_promotions", {"scope_hash": "test_scope"})
+    # No promotions yet → empty list
+    blob = "".join(str(item) for item in result)
+    assert blob in ("", "[]") or "[]" in blob
