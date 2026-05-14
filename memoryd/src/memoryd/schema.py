@@ -61,11 +61,17 @@ class SessionMemory(BaseModel):
 
     def to_markdown(self) -> str:
         fm_dict = self.frontmatter.model_dump(mode="json", exclude_none=True)
-        # exclude_none drops None fields but pydantic v2 may keep empty lists;
-        # drop those explicitly to keep file clean
+        # exclude_none drops None fields but pydantic v2 keeps empty lists and
+        # non-None scalar defaults. Strip both so Plan 1-2.5 sessions re-saved
+        # by Plan 3 governance jobs don't acquire noise lines (decay_state,
+        # recall_count) that match their defaults.
         for k in ("triggers", "tags", "relations", "supersedes"):
             if fm_dict.get(k) == []:
                 del fm_dict[k]
+        if fm_dict.get("decay_state") == "alive":
+            del fm_dict["decay_state"]
+        if fm_dict.get("recall_count") == 0:
+            del fm_dict["recall_count"]
         fm_yaml = yaml.safe_dump(fm_dict, sort_keys=False, allow_unicode=True)
         return f"---\n{fm_yaml}---\n\n{self.body}"
 

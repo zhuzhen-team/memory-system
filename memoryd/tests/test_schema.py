@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from memoryd.schema import SessionMemory, Frontmatter
+from memoryd.schema import Frontmatter, MemoryType, SessionMemory
 
 
 def test_frontmatter_required_fields():
@@ -84,9 +84,6 @@ def test_from_markdown_rejects_non_dict_frontmatter():
     # Scalar
     with pytest.raises(ValueError, match="must be a mapping"):
         SessionMemory.from_markdown("---\njust a string\n---\n\nbody\n")
-
-
-from memoryd.schema import MemoryType
 
 
 def test_memory_type_supports_six_kinds():
