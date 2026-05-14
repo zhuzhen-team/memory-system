@@ -27,6 +27,8 @@ from . import setup as setup_mod
 from . import config as config_mod
 from .governance.analyze import analyze_session as _analyze_session
 from .llm import LLMUnavailable, get_provider
+from . import scope_meta as _scope_meta
+from . import enc as _enc
 
 
 DEFAULT_DATA_ROOT = Path.home() / ".local" / "share" / "memoryd"
@@ -357,6 +359,115 @@ def cmd_digest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mark_sensitive(args: argparse.Namespace) -> int:
+    """mark-sensitive <scope_path>: encrypt existing .md files and register scope."""
+    scope_root = resolve_scope_root(Path(args.scope_path))
+    sh = scope_hash(scope_root)
+    memory_root = _data_root()
+
+    # 1. Write .memoryd-sensitive marker (raises ValueError if parent already marked)
+    try:
+        _scope_meta.mark_sensitive(scope_root)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    # 2. Get-or-create AES key in Keychain
+    _enc.get_or_create_scope_key(sh)
+
+    # 3. Register in SQLite sensitive_scopes table
+    idx = _open_idx(memory_root / "index.db")
+    try:
+        # Idempotent: register_sensitive_scope uses INSERT OR REPLACE
+        idx.register_sensitive_scope(sh, str(scope_root))
+
+        # 4. Encrypt existing .md files in <root>/scopes/<hash>/**
+        scope_dir = memory_root / "scopes" / sh
+        encrypted = 0
+        if scope_dir.exists():
+            for md_path in sorted(scope_dir.rglob("*.md")):
+                plaintext = md_path.read_bytes()
+                blob = _enc.encrypt_bytes(sh, plaintext)
+                enc_path = md_path.with_suffix(".md.enc")
+                enc_path.write_bytes(blob)
+                # Update SQLite body_path for this file
+                old_rel = str(md_path.relative_to(memory_root))
+                new_rel = str(enc_path.relative_to(memory_root))
+                idx.conn.execute(
+                    "UPDATE memories SET body_path = ? WHERE body_path = ?",
+                    (new_rel, old_rel),
+                )
+                md_path.unlink()
+                encrypted += 1
+
+        # 5. UPDATE scope_sensitive=1 for all memories in this scope
+        idx.conn.execute(
+            "UPDATE memories SET scope_sensitive = 1 WHERE scope_hash = ?",
+            (sh,),
+        )
+        idx.conn.commit()
+    finally:
+        idx.close()
+
+    print(
+        f"mark-sensitive: scope={scope_root} hash={sh} files_encrypted={encrypted}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def cmd_unmark_sensitive(args: argparse.Namespace) -> int:
+    """unmark-sensitive <scope_path>: decrypt .md.enc files and remove registration."""
+    scope_root = resolve_scope_root(Path(args.scope_path))
+    sh = scope_hash(scope_root)
+    memory_root = _data_root()
+
+    # 1. Decrypt existing .md.enc files
+    idx = _open_idx(memory_root / "index.db")
+    try:
+        scope_dir = memory_root / "scopes" / sh
+        decrypted = 0
+        if scope_dir.exists():
+            for enc_path in sorted(scope_dir.rglob("*.md.enc")):
+                blob = enc_path.read_bytes()
+                plaintext = _enc.decrypt_bytes(sh, blob)
+                md_path = enc_path.with_name(enc_path.name[:-4])  # strip .enc
+                md_path.write_bytes(plaintext)
+                # Update SQLite body_path
+                old_rel = str(enc_path.relative_to(memory_root))
+                new_rel = str(md_path.relative_to(memory_root))
+                idx.conn.execute(
+                    "UPDATE memories SET body_path = ? WHERE body_path = ?",
+                    (new_rel, old_rel),
+                )
+                enc_path.unlink()
+                decrypted += 1
+
+        # 2. UPDATE scope_sensitive=0
+        idx.conn.execute(
+            "UPDATE memories SET scope_sensitive = 0 WHERE scope_hash = ?",
+            (sh,),
+        )
+        idx.conn.commit()
+
+        # 3. Unregister from sensitive_scopes
+        idx.unregister_sensitive_scope(sh)
+    finally:
+        idx.close()
+
+    # 4. Delete Keychain key (best-effort)
+    _enc.delete_scope_key(sh)
+
+    # 5. Remove .memoryd-sensitive marker
+    _scope_meta.unmark_sensitive(scope_root)
+
+    print(
+        f"unmark-sensitive: scope={scope_root} hash={sh} files_decrypted={decrypted}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.config_action == "show":
         import json as _j
@@ -478,6 +589,20 @@ def main() -> int:
     p_set.add_argument("key")
     p_set.add_argument("value")
     p_config.set_defaults(func=cmd_config)
+
+    p_mark = subs.add_parser(
+        "mark-sensitive",
+        help="encrypt existing memories for a scope and store key in Keychain",
+    )
+    p_mark.add_argument("scope_path", help="path within the scope to mark")
+    p_mark.set_defaults(func=cmd_mark_sensitive)
+
+    p_unmark = subs.add_parser(
+        "unmark-sensitive",
+        help="decrypt memories for a scope and remove Keychain key",
+    )
+    p_unmark.add_argument("scope_path", help="path within the scope to unmark")
+    p_unmark.set_defaults(func=cmd_unmark_sensitive)
 
     args = parser.parse_args()
     return args.func(args)
