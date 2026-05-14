@@ -21,6 +21,7 @@ from .mirror_openclaw import OpenClawSessionHandler
 from .schema import Frontmatter, SessionMemory
 from .scope import resolve_scope_root, scope_hash
 from .storage import save_session
+from . import setup as setup_mod
 
 
 DEFAULT_DATA_ROOT = Path.home() / ".local" / "share" / "memoryd"
@@ -225,6 +226,48 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_swap_notify(args: argparse.Namespace) -> int:
+    setup_mod.swap_codex_notify(
+        to=args.to,
+        codex_dir=Path(args.codex_dir),
+        backup_dir=Path(args.backup_dir),
+        probe_path=args.probe_path,
+        wrapper_path=args.wrapper_path,
+    )
+    print(f"swap-codex-notify: notify swapped to {args.to}", file=sys.stderr)
+    return 0
+
+
+def _cmd_remove_stop_hook(args: argparse.Namespace) -> int:
+    setup_mod.remove_codex_stop_hook(
+        codex_dir=Path(args.codex_dir),
+        backup_dir=Path(args.backup_dir),
+    )
+    print("remove-codex-stop-hook: ok", file=sys.stderr)
+    return 0
+
+
+def _cmd_install_launchd(args: argparse.Namespace) -> int:
+    out = setup_mod.install_launchd_mirror(
+        template_path=Path(args.template),
+        launch_dir=Path(args.launch_dir),
+        memoryd_bin=args.memoryd_bin,
+        data_root=args.data_root,
+    )
+    print(f"install-launchd-mirror: rendered to {out}", file=sys.stderr)
+    print(
+        "next step: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.memoryd.mirror.plist",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_uninstall_launchd(args: argparse.Namespace) -> int:
+    deleted = setup_mod.uninstall_launchd_mirror(launch_dir=Path(args.launch_dir))
+    print(f"uninstall-launchd-mirror: {'deleted' if deleted else 'not installed'}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="memoryd")
     subs = parser.add_subparsers(dest="cmd", required=True)
@@ -265,6 +308,40 @@ def main() -> int:
         help="scan existing files once and exit (no watchdog)",
     )
     p_mirror.set_defaults(func=cmd_mirror)
+
+    p_setup = subs.add_parser(
+        "setup",
+        help="manage user-side config wire-up (~/.codex/, ~/Library/LaunchAgents/)",
+    )
+    setup_subs = p_setup.add_subparsers(dest="setup_cmd", required=True)
+
+    # swap-codex-notify
+    p_swap = setup_subs.add_parser("swap-codex-notify", help="swap Codex notify between probe/wrapper/original")
+    p_swap.add_argument("--to", choices=["probe", "wrapper", "original"], required=True)
+    p_swap.add_argument("--codex-dir", default=str(Path.home() / ".codex"))
+    p_swap.add_argument("--backup-dir", default=str(Path.home() / ".claude" / "backups"))
+    p_swap.add_argument("--probe-path", default="/Users/abble/project-management-personal/scripts/codex-notify-probe.sh")
+    p_swap.add_argument("--wrapper-path", default="/Users/abble/project-management-personal/scripts/codex-notify-wrapper.sh")
+    p_swap.set_defaults(func=_cmd_swap_notify)
+
+    # remove-codex-stop-hook
+    p_rm = setup_subs.add_parser("remove-codex-stop-hook", help="drop the dead Stop entry from ~/.codex/hooks.json")
+    p_rm.add_argument("--codex-dir", default=str(Path.home() / ".codex"))
+    p_rm.add_argument("--backup-dir", default=str(Path.home() / ".claude" / "backups"))
+    p_rm.set_defaults(func=_cmd_remove_stop_hook)
+
+    # install-launchd-mirror
+    p_inst = setup_subs.add_parser("install-launchd-mirror", help="render and install LaunchAgent plist")
+    p_inst.add_argument("--template", default="/Users/abble/project-management-personal/scripts/launchd/com.memoryd.mirror.plist")
+    p_inst.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
+    p_inst.add_argument("--memoryd-bin", default="/Users/abble/project-management-personal/memoryd/.venv/bin/memoryd")
+    p_inst.add_argument("--data-root", default=str(Path.home() / ".local" / "share" / "memoryd"))
+    p_inst.set_defaults(func=_cmd_install_launchd)
+
+    # uninstall-launchd-mirror
+    p_un = setup_subs.add_parser("uninstall-launchd-mirror")
+    p_un.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
+    p_un.set_defaults(func=_cmd_uninstall_launchd)
 
     args = parser.parse_args()
     return args.func(args)
