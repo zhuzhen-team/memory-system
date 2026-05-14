@@ -339,6 +339,24 @@ def cmd_decay_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_merge(args: argparse.Namespace) -> int:
+    from .governance.merge import merge_memories
+    merge_memories(_data_root(), keep_slug=args.keep, drop_slugs=args.drop)
+    print(f"merge: keep={args.keep} drop={','.join(args.drop)}", file=sys.stderr)
+    return 0
+
+
+def cmd_digest(args: argparse.Namespace) -> int:
+    from .governance.digest import build_digest, render_digest_text
+    d = build_digest(_data_root())
+    if args.json:
+        import json as _j
+        print(_j.dumps(d, indent=2, ensure_ascii=False))
+    else:
+        print(render_digest_text(d))
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.config_action == "show":
         import json as _j
@@ -443,6 +461,15 @@ def main() -> int:
 
     p_decay = subs.add_parser("decay-sweep", help="step memories through alive→dim→soft-forgotten state machine")
     p_decay.set_defaults(func=cmd_decay_sweep)
+
+    p_merge = subs.add_parser("merge", help="merge dup memories (keep one, drop others)")
+    p_merge.add_argument("--keep", required=True)
+    p_merge.add_argument("--drop", nargs="+", required=True)
+    p_merge.set_defaults(func=cmd_merge)
+
+    p_digest = subs.add_parser("digest", help="show weekly digest (promotions / duplicates / decayed)")
+    p_digest.add_argument("--json", action="store_true")
+    p_digest.set_defaults(func=cmd_digest)
 
     p_config = subs.add_parser("config", help="show / set memoryd config")
     cfg_subs = p_config.add_subparsers(dest="config_action", required=True)
