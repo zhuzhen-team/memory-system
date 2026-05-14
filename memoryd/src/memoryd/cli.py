@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .mirror import MirrorRouter
+from .mirror_codex import CodexRolloutHandler
+from .mirror_openclaw import OpenClawSessionHandler
 from .schema import Frontmatter, SessionMemory
 from .scope import resolve_scope_root, scope_hash
 from .storage import save_session
@@ -146,6 +149,82 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_router_for_args(args: argparse.Namespace, memory_root: Path) -> MirrorRouter:
+    router = MirrorRouter()
+    if args.codex:
+        router.register(suffix=".md", handler=CodexRolloutHandler(memory_root))
+    if args.openclaw:
+        known = [Path(p) for p in (args.known_roots or [])]
+        router.register(
+            suffix=".jsonl",
+            handler=OpenClawSessionHandler(memory_root, known_roots=known),
+        )
+    return router
+
+
+def _watch_paths(args: argparse.Namespace) -> list[Path]:
+    paths: list[Path] = []
+    if args.codex:
+        codex_dir = Path(args.codex_dir or (Path.home() / ".codex" / "memories" / "rollout_summaries"))
+        codex_dir.mkdir(parents=True, exist_ok=True)
+        paths.append(codex_dir)
+    if args.openclaw:
+        openclaw_root = Path(args.openclaw_dir or (Path.home() / ".openclaw" / "agents"))
+        openclaw_root.mkdir(parents=True, exist_ok=True)
+        paths.append(openclaw_root)
+    return paths
+
+
+def cmd_mirror(args: argparse.Namespace) -> int:
+    if not args.codex and not args.openclaw:
+        print("error: pass at least one of --codex / --openclaw", file=sys.stderr)
+        return 2
+
+    memory_root = _data_root()
+    router = _build_router_for_args(args, memory_root)
+    paths = _watch_paths(args)
+
+    # First, scan existing files in target dirs once (catch-up pass)
+    for watch_root in paths:
+        for f in watch_root.rglob("*"):
+            if f.is_file():
+                router.dispatch(f)
+
+    if args.once:
+        return 0
+
+    # Run watchdog observer until SIGINT
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+
+    class _Adapter(FileSystemEventHandler):
+        def __init__(self, router: MirrorRouter) -> None:
+            self.router = router
+
+        def on_created(self, event):
+            if event.is_directory:
+                return
+            self.router.dispatch(Path(event.src_path))
+
+        def on_modified(self, event):
+            # Some apps write files in two steps; re-dispatch on modify too.
+            if event.is_directory:
+                return
+            self.router.dispatch(Path(event.src_path))
+
+    observer = Observer()
+    adapter = _Adapter(router)
+    for p in paths:
+        observer.schedule(adapter, str(p), recursive=True)
+    observer.start()
+    try:
+        observer.join()
+    except KeyboardInterrupt:
+        observer.stop()
+        observer.join(timeout=5)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="memoryd")
     subs = parser.add_subparsers(dest="cmd", required=True)
@@ -157,6 +236,35 @@ def main() -> int:
         help="origin tool tag written to frontmatter (claude-code | codex | openclaw | ...)",
     )
     p_capture.set_defaults(func=cmd_capture)
+
+    p_mirror = subs.add_parser(
+        "mirror",
+        help="watch Codex / OpenClaw session log dirs and mirror new files into memoryd",
+    )
+    p_mirror.add_argument("--codex", action="store_true", help="mirror Codex rollout_summaries")
+    p_mirror.add_argument("--openclaw", action="store_true", help="mirror OpenClaw session jsonl")
+    p_mirror.add_argument(
+        "--codex-dir",
+        default=None,
+        help="override Codex rollout dir (default: ~/.codex/memories/rollout_summaries)",
+    )
+    p_mirror.add_argument(
+        "--openclaw-dir",
+        default=None,
+        help="override OpenClaw agents root (default: ~/.openclaw/agents)",
+    )
+    p_mirror.add_argument(
+        "--known-roots",
+        nargs="*",
+        default=None,
+        help="paths to use for OpenClaw content-based scope reverse-lookup",
+    )
+    p_mirror.add_argument(
+        "--once",
+        action="store_true",
+        help="scan existing files once and exit (no watchdog)",
+    )
+    p_mirror.set_defaults(func=cmd_mirror)
 
     args = parser.parse_args()
     return args.func(args)

@@ -190,3 +190,51 @@ def test_main_passes_source_flag_to_capture(memory_root: Path, tmp_path: Path):
     assert len(files) == 1
     sess = load_session(files[0])
     assert sess.frontmatter.source == "openclaw"
+
+
+def test_mirror_once_scans_existing_codex_files(memory_root: Path, tmp_path: Path):
+    """`memoryd mirror --codex --once --codex-dir <tmp>` mirrors existing files then exits."""
+    import subprocess
+    import os
+    import re as _re
+
+    codex_dir = tmp_path / "rollout_summaries"
+    codex_dir.mkdir()
+    sample = (
+        "thread_id: t1\nupdated_at: 2026-05-14T10:00:00+00:00\n"
+        f"cwd: {tmp_path}\n\n# title\nbody\n"
+    )
+    (codex_dir / "2026-05-14T10-00-00-id1-topic.md").write_text(sample)
+
+    proc = subprocess.run(
+        [
+            "uv", "run", "memoryd", "mirror",
+            "--codex",
+            "--once",
+            "--codex-dir", str(codex_dir),
+        ],
+        capture_output=True,
+        text=True,
+        cwd="/Users/abble/project-management-personal/memoryd",
+        env={**os.environ, "MEMORYD_DATA_ROOT": str(memory_root)},
+        timeout=30,
+    )
+    assert proc.returncode == 0, f"stderr: {proc.stderr}"
+    files = list((memory_root / "scopes").rglob("*.md"))
+    assert len(files) == 1
+    assert "codex-rollout" in files[0].read_text()
+
+
+def test_mirror_help_includes_subcommand():
+    import subprocess
+    proc = subprocess.run(
+        ["uv", "run", "memoryd", "mirror", "--help"],
+        capture_output=True,
+        text=True,
+        cwd="/Users/abble/project-management-personal/memoryd",
+        timeout=20,
+    )
+    assert proc.returncode == 0
+    assert "--codex" in proc.stdout
+    assert "--openclaw" in proc.stdout
+    assert "--once" in proc.stdout
