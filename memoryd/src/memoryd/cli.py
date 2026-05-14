@@ -15,9 +15,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .mirror import MirrorRouter
+from .mirror_codex import CodexRolloutHandler
+from .mirror_openclaw import OpenClawSessionHandler
 from .schema import Frontmatter, SessionMemory
 from .scope import resolve_scope_root, scope_hash
 from .storage import save_session
+from . import setup as setup_mod
 
 
 DEFAULT_DATA_ROOT = Path.home() / ".local" / "share" / "memoryd"
@@ -146,6 +150,124 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_router_for_args(args: argparse.Namespace, memory_root: Path) -> MirrorRouter:
+    router = MirrorRouter()
+    if args.codex:
+        router.register(suffix=".md", handler=CodexRolloutHandler(memory_root))
+    if args.openclaw:
+        known = [Path(p) for p in (args.known_roots or [])]
+        router.register(
+            suffix=".jsonl",
+            handler=OpenClawSessionHandler(memory_root, known_roots=known),
+        )
+    return router
+
+
+def _watch_paths(args: argparse.Namespace) -> list[Path]:
+    paths: list[Path] = []
+    if args.codex:
+        codex_dir = Path(args.codex_dir or (Path.home() / ".codex" / "memories" / "rollout_summaries"))
+        codex_dir.mkdir(parents=True, exist_ok=True)
+        paths.append(codex_dir)
+    if args.openclaw:
+        openclaw_root = Path(args.openclaw_dir or (Path.home() / ".openclaw" / "agents"))
+        openclaw_root.mkdir(parents=True, exist_ok=True)
+        paths.append(openclaw_root)
+    return paths
+
+
+def cmd_mirror(args: argparse.Namespace) -> int:
+    if not args.codex and not args.openclaw:
+        print("error: pass at least one of --codex / --openclaw", file=sys.stderr)
+        return 2
+
+    memory_root = _data_root()
+    router = _build_router_for_args(args, memory_root)
+    paths = _watch_paths(args)
+
+    # First, scan existing files in target dirs once (catch-up pass)
+    for watch_root in paths:
+        for f in watch_root.rglob("*"):
+            if f.is_file():
+                router.dispatch(f)
+
+    if args.once:
+        return 0
+
+    # Run watchdog observer until SIGINT
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+
+    class _Adapter(FileSystemEventHandler):
+        def __init__(self, router: MirrorRouter) -> None:
+            self.router = router
+
+        def on_created(self, event):
+            if event.is_directory:
+                return
+            self.router.dispatch(Path(event.src_path))
+
+        def on_modified(self, event):
+            # Some apps write files in two steps; re-dispatch on modify too.
+            if event.is_directory:
+                return
+            self.router.dispatch(Path(event.src_path))
+
+    observer = Observer()
+    adapter = _Adapter(router)
+    for p in paths:
+        observer.schedule(adapter, str(p), recursive=True)
+    observer.start()
+    try:
+        observer.join()
+    except KeyboardInterrupt:
+        observer.stop()
+        observer.join(timeout=5)
+    return 0
+
+
+def _cmd_swap_notify(args: argparse.Namespace) -> int:
+    setup_mod.swap_codex_notify(
+        to=args.to,
+        codex_dir=Path(args.codex_dir),
+        backup_dir=Path(args.backup_dir),
+        probe_path=args.probe_path,
+        wrapper_path=args.wrapper_path,
+    )
+    print(f"swap-codex-notify: notify swapped to {args.to}", file=sys.stderr)
+    return 0
+
+
+def _cmd_remove_stop_hook(args: argparse.Namespace) -> int:
+    setup_mod.remove_codex_stop_hook(
+        codex_dir=Path(args.codex_dir),
+        backup_dir=Path(args.backup_dir),
+    )
+    print("remove-codex-stop-hook: ok", file=sys.stderr)
+    return 0
+
+
+def _cmd_install_launchd(args: argparse.Namespace) -> int:
+    out = setup_mod.install_launchd_mirror(
+        template_path=Path(args.template),
+        launch_dir=Path(args.launch_dir),
+        memoryd_bin=args.memoryd_bin,
+        data_root=args.data_root,
+    )
+    print(f"install-launchd-mirror: rendered to {out}", file=sys.stderr)
+    print(
+        "next step: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.memoryd.mirror.plist",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_uninstall_launchd(args: argparse.Namespace) -> int:
+    deleted = setup_mod.uninstall_launchd_mirror(launch_dir=Path(args.launch_dir))
+    print(f"uninstall-launchd-mirror: {'deleted' if deleted else 'not installed'}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="memoryd")
     subs = parser.add_subparsers(dest="cmd", required=True)
@@ -157,6 +279,69 @@ def main() -> int:
         help="origin tool tag written to frontmatter (claude-code | codex | openclaw | ...)",
     )
     p_capture.set_defaults(func=cmd_capture)
+
+    p_mirror = subs.add_parser(
+        "mirror",
+        help="watch Codex / OpenClaw session log dirs and mirror new files into memoryd",
+    )
+    p_mirror.add_argument("--codex", action="store_true", help="mirror Codex rollout_summaries")
+    p_mirror.add_argument("--openclaw", action="store_true", help="mirror OpenClaw session jsonl")
+    p_mirror.add_argument(
+        "--codex-dir",
+        default=None,
+        help="override Codex rollout dir (default: ~/.codex/memories/rollout_summaries)",
+    )
+    p_mirror.add_argument(
+        "--openclaw-dir",
+        default=None,
+        help="override OpenClaw agents root (default: ~/.openclaw/agents)",
+    )
+    p_mirror.add_argument(
+        "--known-roots",
+        nargs="*",
+        default=None,
+        help="paths to use for OpenClaw content-based scope reverse-lookup",
+    )
+    p_mirror.add_argument(
+        "--once",
+        action="store_true",
+        help="scan existing files once and exit (no watchdog)",
+    )
+    p_mirror.set_defaults(func=cmd_mirror)
+
+    p_setup = subs.add_parser(
+        "setup",
+        help="manage user-side config wire-up (~/.codex/, ~/Library/LaunchAgents/)",
+    )
+    setup_subs = p_setup.add_subparsers(dest="setup_cmd", required=True)
+
+    # swap-codex-notify
+    p_swap = setup_subs.add_parser("swap-codex-notify", help="swap Codex notify between probe/wrapper/original")
+    p_swap.add_argument("--to", choices=["probe", "wrapper", "original"], required=True)
+    p_swap.add_argument("--codex-dir", default=str(Path.home() / ".codex"))
+    p_swap.add_argument("--backup-dir", default=str(Path.home() / ".claude" / "backups"))
+    p_swap.add_argument("--probe-path", default="/Users/abble/project-management-personal/scripts/codex-notify-probe.sh")
+    p_swap.add_argument("--wrapper-path", default="/Users/abble/project-management-personal/scripts/codex-notify-wrapper.sh")
+    p_swap.set_defaults(func=_cmd_swap_notify)
+
+    # remove-codex-stop-hook
+    p_rm = setup_subs.add_parser("remove-codex-stop-hook", help="drop the dead Stop entry from ~/.codex/hooks.json")
+    p_rm.add_argument("--codex-dir", default=str(Path.home() / ".codex"))
+    p_rm.add_argument("--backup-dir", default=str(Path.home() / ".claude" / "backups"))
+    p_rm.set_defaults(func=_cmd_remove_stop_hook)
+
+    # install-launchd-mirror
+    p_inst = setup_subs.add_parser("install-launchd-mirror", help="render and install LaunchAgent plist")
+    p_inst.add_argument("--template", default="/Users/abble/project-management-personal/scripts/launchd/com.memoryd.mirror.plist")
+    p_inst.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
+    p_inst.add_argument("--memoryd-bin", default="/Users/abble/project-management-personal/memoryd/.venv/bin/memoryd")
+    p_inst.add_argument("--data-root", default=str(Path.home() / ".local" / "share" / "memoryd"))
+    p_inst.set_defaults(func=_cmd_install_launchd)
+
+    # uninstall-launchd-mirror
+    p_un = setup_subs.add_parser("uninstall-launchd-mirror")
+    p_un.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
+    p_un.set_defaults(func=_cmd_uninstall_launchd)
 
     args = parser.parse_args()
     return args.func(args)

@@ -71,92 +71,109 @@ tmp.replace(path)
 
 Restart Claude Code. Run `/mcp` and verify `memoryd` appears with `search_memory` tool.
 
-## Wire into Codex
+## Wire into Codex（Plan 2.5 双通路）
 
-> Codex doesn't have a `SessionEnd` event; we hook the `Stop` event, which
-> fires when a turn finishes. Multiple turns in one Codex session will
-> overwrite the same `<date>-<session_id>.md` file — the last turn's
-> summary wins. Long-term governance (incl. per-turn slugs or merged
-> summaries) lands in plan 3.
+> Codex.app 的 hooks engine 当前版本对所有事件零触发（已实测）；Plan 2.5
+> 改走两条互补通路：notify wrapper 实时捕获 + 文件系统监听 rollout_summary。
+> 旧的 `scripts/codex-stop-hook.sh` 已删除。
 
-1. Backup your current `~/.codex/hooks.json`:
-   ```bash
-   mkdir -p ~/.claude/backups
-   cp ~/.codex/hooks.json ~/.claude/backups/codex.hooks.json.bak.$(date +%Y%m%d-%H%M%S) 2>/dev/null || echo "no existing hooks.json"
-   ```
+### 1. 备份并替换 notify 字段（实时通路）
 
-2. Merge the Stop hook into `~/.codex/hooks.json` (use Python so other hooks survive):
-   ```python
-   import json
-   from pathlib import Path
-   p = Path.home() / ".codex" / "hooks.json"
-   p.parent.mkdir(parents=True, exist_ok=True)
-   d = json.loads(p.read_text()) if p.exists() else {}
-   d.setdefault("hooks", {}).setdefault("Stop", []).append({
-       "hooks": [{
-           "type": "command",
-           "command": "/path/to/project-management-personal/scripts/codex-stop-hook.sh",
-           "async": True,
-           "statusMessage": "memoryd capture (codex)"
-       }]
-   })
-   tmp = p.with_suffix(".json.tmp")
-   tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False))
-   tmp.replace(p)
-   ```
+```bash
+# 完整切到 wrapper（先做一遍 probe 才知道 notify 真实 schema；
+# 详见下面 Phase 1 手册）
+/Users/abble/project-management-personal/memoryd/.venv/bin/memoryd setup swap-codex-notify --to wrapper
+```
 
-3. Register memoryd as an MCP server in `~/.codex/config.toml`. This is the
-   recall side — without it Codex can write memories (via the Stop hook)
-   but cannot call `search_memory` to read them. Append (don't replace —
-   `config.toml` likely already has other `[mcp_servers.*]` tables):
-   ```toml
-   [mcp_servers.memoryd]
-   command = "/path/to/project-management-personal/memoryd/.venv/bin/memoryd-server"
-   args = []
+子命令自动：
+- 把 `~/.codex/config.toml` 备份到 `~/.claude/backups/`
+- 用 Python tomllib 读，正则替换 `notify` 字段保留其他 keys
+- 把原 notify target 存到 `~/.codex/.memoryd-notify-state.json`，便于 `--to original` 回滚
 
-   [mcp_servers.memoryd.env]
-   MEMORYD_DATA_ROOT = "/Users/<you>/.local/share/memoryd"
-   ```
-   Validate the file after editing with `python3 -c "import tomllib; tomllib.loads(open('/Users/<you>/.codex/config.toml').read())"` (Python 3.11+).
+### 2. 删除死的 Stop hook 条目
 
-4. Restart Codex. Run any turn; check `~/.local/share/memoryd/logs/codex-stop.log` for `ok`. In a new Codex turn, verify the agent can use the `search_memory` tool (the MCP wiring is live).
+```bash
+memoryd setup remove-codex-stop-hook
+```
 
-## Wire into OpenClaw
+### 3. 启动 FS-watch daemon（事后通路）
 
-> The OpenClaw plugin lives under `scripts/openclaw-memoryd-plugin/`. It
-> registers on the `agent_end` lifecycle hook and requires the
-> `allowConversationAccess` permission to read turn data.
+```bash
+memoryd setup install-launchd-mirror
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.memoryd.mirror.plist
+launchctl print gui/$(id -u)/com.memoryd.mirror  # 验证 daemon 在跑
+```
 
-1. Install the plugin:
-   ```bash
-   cd /path/to/project-management-personal/scripts/openclaw-memoryd-plugin
-   openclaw plugins install --force .
-   ```
+Daemon 监听 `~/.codex/memories/rollout_summaries/`；Codex.app 每个 session 结束后
+会自己往那里写一份 summary `.md`，daemon 把它转码成 memoryd 的 `source=codex-rollout`
+记忆条目。
 
-2. Grant conversation read permission (the plugin does NOT inject prompts):
-   ```bash
-   # Replace <ENTRY_KEY> with what `openclaw plugins install` printed
-   openclaw config set plugins.entries.<ENTRY_KEY>.hooks.allowConversationAccess true
-   openclaw config set plugins.entries.<ENTRY_KEY>.hooks.allowPromptInjection false
-   ```
+### 4. 验证
 
-3. Run any OpenClaw turn; check `~/.local/share/memoryd/logs/openclaw-agent-end.log` for `ok`.
+跑一轮 Codex.app turn，检查：
 
-**Note on OpenClaw backend agent:** Whatever backend agent OpenClaw routes
-your messages to (Claude Code, GPT, etc.), this plugin captures the turn
-from OpenClaw's view — so memories written via OpenClaw appear with
-`source: openclaw`, distinct from the same backend's native source tag.
+```bash
+# 实时通路日志
+tail ~/.local/share/memoryd/logs/codex-notify.log
+
+# FS-watch 通路日志
+tail ~/.local/share/memoryd/logs/mirror.stderr.log
+
+# 新生成的 memoryd 条目
+find ~/.local/share/memoryd/scopes -name "*.md" -newer /tmp -ls
+```
+
+## Wire into OpenClaw（Plan 2.5 双通路）
+
+> OpenClaw 2026.5.7 的插件 SDK 是 `definePluginEntry` + `registerAgentEventSubscription`，
+> 不再支持旧的 `api.on('agent_end', ...)`。Plan 2.5 重写插件入口；同时让 launchd
+> daemon 监听 `~/.openclaw/agents/*/sessions/` 作 fallback。
+
+### 1. 安装插件
+
+```bash
+cd /Users/abble/project-management-personal/scripts/openclaw-memoryd-plugin
+openclaw plugins install --force .
+openclaw plugins list | grep memoryd-openclaw
+```
+
+### 2. 授权对话访问
+
+```bash
+# 用 install 输出的 entry key（通常就是 memoryd-openclaw）
+openclaw config set plugins.entries.memoryd-openclaw.hooks.allowConversationAccess true
+openclaw config set plugins.entries.memoryd-openclaw.hooks.allowPromptInjection false
+```
+
+### 3. FS-watch daemon
+
+Codex 那一步装的 launchd plist 已经同时覆盖 OpenClaw 路径（`--codex --openclaw` 双开）；无需额外操作。
+
+### 4. 验证
+
+跑一轮 OpenClaw turn，检查：
+
+```bash
+tail ~/.local/share/memoryd/logs/openclaw-events.log  # SDK 通路诊断
+find ~/.local/share/memoryd/scopes -newer /tmp -name "*.md" -ls
+```
+
+`source: openclaw`（SDK 实时）或 `source: openclaw-fs`（FS-watch）。
 
 ## Layout
 
 ```
 src/memoryd/
-  schema.py    # Pydantic Markdown frontmatter schema
-  scope.py     # cwd → scope_hash (git-root preferred)
-  storage.py   # save/load/list session markdowns
-  search.py    # ripgrep-based search
-  server.py    # FastMCP server with search_memory tool
-  cli.py       # `memoryd capture` for hook scripts
+  schema.py          # Pydantic Markdown frontmatter schema
+  scope.py           # cwd → scope_hash (git-root preferred)
+  storage.py         # save/load/list session markdowns
+  search.py          # ripgrep-based search
+  server.py          # FastMCP server with search_memory tool
+  cli.py             # `memoryd capture` / `mirror` / `setup` subcommands
+  mirror.py          # watchdog handler framework + _unscoped bucket（Plan 2.5）
+  mirror_codex.py    # Codex rollout_summary 转码（source=codex-rollout，Plan 2.5）
+  mirror_openclaw.py # OpenClaw session jsonl 转码（source=openclaw-fs，Plan 2.5）
+  setup.py           # 用户配置管理：notify swap / hooks 清理 / launchd 安装（Plan 2.5）
 
 tests/
   test_schema.py
@@ -165,6 +182,10 @@ tests/
   test_search.py
   test_cli.py
   test_server.py
+  test_mirror.py           # Plan 2.5
+  test_mirror_codex.py     # Plan 2.5
+  test_mirror_openclaw.py  # Plan 2.5
+  test_setup.py            # Plan 2.5
 ```
 
 Memory data root (default `~/.local/share/memoryd`):
@@ -174,8 +195,16 @@ scopes/
   <scope_hash>/
     sessions/
       2026-05-09-<session-id>.md
+  _unscoped/                  # 反推不到 scope 时兜底（Plan 2.5）
+    sessions/...
 logs/
   cc-session-end.log
+  codex-notify.log            # Plan 2.5 实时通路
+  openclaw-events.log         # Plan 2.5 OpenClaw SDK 事件
+  mirror.stdout.log           # Plan 2.5 launchd daemon
+  mirror.stderr.log
+probe/
+  notify-probe.log            # Plan 2.5 Phase 1 探针
 ```
 
 ## Run tests

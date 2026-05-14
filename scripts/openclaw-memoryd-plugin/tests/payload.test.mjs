@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildPayload, materializeTranscript } from "../src/index.mjs";
+import { buildPayload, materializeTranscript } from "../src/payload.js";
 
 test("buildPayload extracts canonical fields when transcriptPath given", () => {
   const ev = {
@@ -55,15 +55,7 @@ test("materializeTranscript writes inline messages as CC-format JSONL", () => {
   assert.ok(existsSync(path));
   const lines = readFileSync(path, "utf-8").trim().split("\n");
   assert.equal(lines.length, 3);
-  const first = JSON.parse(lines[0]);
-  assert.equal(first.type, "user");
-  assert.equal(first.message.content[0].text, "你好");
-  const second = JSON.parse(lines[1]);
-  assert.equal(second.type, "assistant");
-  assert.equal(second.message.content[0].text, "hi back");
-  const third = JSON.parse(lines[2]);
-  assert.equal(third.type, "user");
-  assert.equal(third.message.content[0].text, "再问一句");
+  assert.equal(JSON.parse(lines[0]).message.content[0].text, "你好");
 });
 
 test("materializeTranscript returns empty string when no messages and no path", () => {

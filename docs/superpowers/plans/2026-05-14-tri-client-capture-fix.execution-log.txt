@@ -1,0 +1,85 @@
+=== Plan 2.5 实施日志 ===
+
+[Phase 0 自动化任务由 subagent 完成；时间戳由各 commit 给出]
+
+=== Phase 1 用户手册（按顺序执行）===
+
+# 0. 准备
+cd /Users/abble/project-management-personal
+git pull --ff-only main  # 确保拿到 Phase 0 所有 commit
+cd memoryd && uv sync && cd ..
+
+# 1. Codex notify 探针（探一次 Codex.app 实际给 notify 什么）
+memoryd/.venv/bin/memoryd setup swap-codex-notify --to probe
+# >>> 打开 Codex.app，开 1 个新会话，发任意 prompt（如"hi"），让它产 1 个 turn
+# >>> 然后立刻：
+cat ~/.local/share/memoryd/probe/notify-probe.log
+# 把整段日志粘给我（subagent），并立刻：
+memoryd/.venv/bin/memoryd setup swap-codex-notify --to original
+# 这一步至少把 SkyComputerUseClient 切回原样；后面我看完探针日志再决定要不要 swap 到 wrapper
+
+# 2. OpenClaw 插件安装 + 授权
+cd scripts/openclaw-memoryd-plugin
+openclaw plugins install --force .
+openclaw plugins list | grep memoryd-openclaw
+openclaw config set plugins.entries.memoryd-openclaw.hooks.allowConversationAccess true
+openclaw config set plugins.entries.memoryd-openclaw.hooks.allowPromptInjection false
+cd ../..
+
+# 3. launchd daemon 起
+memoryd/.venv/bin/memoryd setup install-launchd-mirror
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.memoryd.mirror.plist
+sleep 2
+launchctl print gui/$(id -u)/com.memoryd.mirror | head -30
+# 看 state = running
+
+# 4. 删 Codex 死 hook 条目
+memoryd/.venv/bin/memoryd setup remove-codex-stop-hook
+
+# 5. tri-client e2e 暗号验证
+TEST_PROJECT="$HOME/tmp/memoryd-tri-e2e-plan2.5-$(date +%s)"
+mkdir -p "$TEST_PROJECT" && cd "$TEST_PROJECT" && git init -q
+SCOPE_HASH=$(python3 -c "
+import sys
+sys.path.insert(0, '/Users/abble/project-management-personal/memoryd/src')
+from memoryd.scope import scope_hash, resolve_scope_root
+from pathlib import Path
+print(scope_hash(resolve_scope_root(Path('$TEST_PROJECT'))))
+")
+echo "scope_hash: $SCOPE_HASH"
+
+# 5a. CC 写第一条 (CC-WATERMELON-7777)
+claude   # 在 TUI 里说："请记住：暗号 CC-WATERMELON-7777"，然后 /exit
+sleep 3
+ls "$HOME/.local/share/memoryd/scopes/$SCOPE_HASH/sessions/" | grep "$(date +%Y-%m-%d)"
+
+# 5b. Codex 写第二条 (CODEX-PEAR-3333)
+open -a "Codex"  # 或你日常启动方式
+# 在 Codex.app 里说："cd $TEST_PROJECT，请记住：暗号 CODEX-PEAR-3333"，然后 /exit
+sleep 30  # rollout_summary 写盘需要一点时间
+grep -rln "PEAR-3333" "$HOME/.local/share/memoryd/scopes/$SCOPE_HASH/" || \
+  grep -rln "PEAR-3333" "$HOME/.local/share/memoryd/scopes/_unscoped/"
+
+# 5c. OpenClaw 写第三条 (OPENCLAW-MANGO-4242)
+cd "$TEST_PROJECT" && openclaw  # 在 TUI 里说："请记住：暗号 OPENCLAW-MANGO-4242"，然后退出
+sleep 5
+grep -rln "MANGO-4242" "$HOME/.local/share/memoryd/scopes/$SCOPE_HASH/" || \
+  grep -rln "MANGO-4242" "$HOME/.local/share/memoryd/scopes/_unscoped/"
+
+# 5d. 三端跨召回
+cd "$TEST_PROJECT"
+claude
+# 说："用 search_memory 找 PEAR 和 MANGO 的暗号"
+# 期望：两个都召回
+
+codex  # 或 Codex.app
+# 说："用 memoryd 找 WATERMELON 和 MANGO"
+
+openclaw
+# 说："用 memoryd 找 WATERMELON 和 PEAR"
+
+# 6. 把结果回报
+echo "[$(date -Iseconds)] tri-client e2e RESULT: <PASS/FAIL+症状>" \
+    >> /Users/abble/project-management-personal/docs/superpowers/plans/2026-05-14-tri-client-capture-fix.execution-log.txt
+
+=== Phase 1 手册 end ===
