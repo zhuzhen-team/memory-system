@@ -238,3 +238,17 @@ def test_mirror_help_includes_subcommand():
     assert "--codex" in proc.stdout
     assert "--openclaw" in proc.stdout
     assert "--once" in proc.stdout
+
+
+def test_mirror_without_source_flag_exits_2():
+    """`memoryd mirror` 不带 --codex / --openclaw 时 exit 2 + 错误信息."""
+    import subprocess
+    proc = subprocess.run(
+        ["uv", "run", "memoryd", "mirror"],
+        capture_output=True,
+        text=True,
+        cwd="/Users/abble/project-management-personal/memoryd",
+        timeout=10,
+    )
+    assert proc.returncode == 2
+    assert "pass at least one" in proc.stderr
