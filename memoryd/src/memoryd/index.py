@@ -147,6 +147,38 @@ class Index:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    # -- sensitive_scopes helpers -------------------------------------------
+
+    def is_scope_sensitive(self, scope_hash: str) -> bool:
+        """Return True if scope_hash is registered in sensitive_scopes table."""
+        row = self.conn.execute(
+            "SELECT 1 FROM sensitive_scopes WHERE scope_hash = ?", (scope_hash,)
+        ).fetchone()
+        return row is not None
+
+    def register_sensitive_scope(self, scope_hash: str, scope_root: str) -> None:
+        """Insert or replace a sensitive scope registration."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO sensitive_scopes (scope_hash, scope_root, marked_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (scope_hash, scope_root),
+        )
+        self.conn.commit()
+
+    def unregister_sensitive_scope(self, scope_hash: str) -> None:
+        """Remove a sensitive scope registration (no-op if missing)."""
+        self.conn.execute(
+            "DELETE FROM sensitive_scopes WHERE scope_hash = ?", (scope_hash,)
+        )
+        self.conn.commit()
+
+    def list_sensitive_scopes(self) -> list[dict]:
+        """Return all registered sensitive scopes as a list of dicts."""
+        rows = self.conn.execute(
+            "SELECT scope_hash, scope_root, marked_at FROM sensitive_scopes ORDER BY marked_at"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # -- lifecycle ----------------------------------------------------------
 
     def close(self) -> None:
