@@ -23,6 +23,7 @@ from .schema import Frontmatter, SessionMemory
 from .scope import resolve_scope_root, scope_hash
 from .storage import load_session, save_session
 from . import setup as setup_mod
+from . import config as config_mod
 
 
 DEFAULT_DATA_ROOT = Path.home() / ".local" / "share" / "memoryd"
@@ -295,6 +296,26 @@ def _cmd_uninstall_launchd(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    if args.config_action == "show":
+        import json as _j
+        print(_j.dumps(config_mod.show_config(), indent=2, ensure_ascii=False))
+    elif args.config_action == "set":
+        # try to coerce value to int/float/bool/str
+        v: object = args.value
+        try:
+            v = int(args.value)
+        except ValueError:
+            try:
+                v = float(args.value)
+            except ValueError:
+                if args.value.lower() in ("true", "false"):
+                    v = args.value.lower() == "true"
+        config_mod.set_config_key(args.key, v)
+        print(f"set {args.key} = {v!r}", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="memoryd")
     subs = parser.add_subparsers(dest="cmd", required=True)
@@ -372,6 +393,14 @@ def main() -> int:
     p_un = setup_subs.add_parser("uninstall-launchd-mirror")
     p_un.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
     p_un.set_defaults(func=_cmd_uninstall_launchd)
+
+    p_config = subs.add_parser("config", help="show / set memoryd config")
+    cfg_subs = p_config.add_subparsers(dest="config_action", required=True)
+    cfg_subs.add_parser("show", help="print resolved config as JSON")
+    p_set = cfg_subs.add_parser("set", help="set a dotted key (e.g. llm.provider openai)")
+    p_set.add_argument("key")
+    p_set.add_argument("value")
+    p_config.set_defaults(func=cmd_config)
 
     args = parser.parse_args()
     return args.func(args)
