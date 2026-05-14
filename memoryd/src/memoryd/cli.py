@@ -468,6 +468,23 @@ def cmd_unmark_sensitive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_grant(args: argparse.Namespace) -> int:
+    from .governance.grants import write_grant
+    scope_root = resolve_scope_root(Path(args.scope_path))
+    sh = scope_hash(scope_root)
+    g = write_grant(sh, str(scope_root), args.duration, task_id=args.task)
+    print(f"grant: scope={scope_root} duration={args.duration} expires={g['expires_at']}", file=sys.stderr)
+    return 0
+
+
+def cmd_revoke(args: argparse.Namespace) -> int:
+    from .governance.grants import revoke_grant
+    sh = scope_hash(resolve_scope_root(Path(args.scope_path)))
+    deleted = revoke_grant(sh, task_id=args.task)
+    print(f"revoke: {'ok' if deleted else 'no-op'}", file=sys.stderr)
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.config_action == "show":
         import json as _j
@@ -603,6 +620,17 @@ def main() -> int:
     )
     p_unmark.add_argument("scope_path", help="path within the scope to unmark")
     p_unmark.set_defaults(func=cmd_unmark_sensitive)
+
+    p_grant = subs.add_parser("grant", help="grant sensitive scope access")
+    p_grant.add_argument("scope_path")
+    p_grant.add_argument("--duration", choices=["once", "session", "task"], required=True)
+    p_grant.add_argument("--task", default=None)
+    p_grant.set_defaults(func=cmd_grant)
+
+    p_revoke = subs.add_parser("revoke", help="revoke sensitive scope access")
+    p_revoke.add_argument("scope_path")
+    p_revoke.add_argument("--task", default=None)
+    p_revoke.set_defaults(func=cmd_revoke)
 
     args = parser.parse_args()
     return args.func(args)
