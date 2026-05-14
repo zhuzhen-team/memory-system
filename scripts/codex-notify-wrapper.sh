@@ -6,8 +6,9 @@
 # `~/.codex/config.toml` notify is rewritten to:
 #   notify = [".../codex-notify-wrapper.sh", "turn-ended"]
 # All arguments after the path are passed through. The original notify
-# target path is stored in CODEX_NOTIFY_ORIGINAL env (set by setup CLI)
-# so we know what to invoke.
+# target path is read from `~/.codex/.memoryd-notify-state.json`
+# (written by `memoryd setup swap-codex-notify` on first swap). CODEX_NOTIFY_ORIGINAL
+# env var is honored as an override if the state file is missing.
 #
 # Failures NEVER block Codex; we always exit 0 unless the original notify
 # returns nonzero (we honor its exit code).
@@ -18,7 +19,25 @@ LOG_DIR="${MEMORYD_DATA_ROOT:-$HOME/.local/share/memoryd}/logs"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 LOG_FILE="$LOG_DIR/codex-notify.log"
 
-ORIGINAL="${CODEX_NOTIFY_ORIGINAL:-}"
+# Resolve original notify target: state file (preferred) → env var (fallback)
+STATE_FILE="${CODEX_NOTIFY_STATE:-$HOME/.codex/.memoryd-notify-state.json}"
+ORIGINAL=""
+if [[ -f "$STATE_FILE" ]] && command -v python3 >/dev/null 2>&1; then
+    ORIGINAL="$(python3 -c "
+import json, sys
+try:
+    with open('$STATE_FILE') as f:
+        d = json.load(f)
+    orig = d.get('original', [])
+    if isinstance(orig, list) and orig:
+        print(orig[0])
+except Exception:
+    pass
+" 2>/dev/null)"
+fi
+if [[ -z "$ORIGINAL" ]]; then
+    ORIGINAL="${CODEX_NOTIFY_ORIGINAL:-}"
+fi
 
 # Buffer stdin (we may need it for both the original target and memoryd).
 # Cap at 1MB to avoid OOM if something unusual is piped; real notify

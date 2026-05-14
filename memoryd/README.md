@@ -164,12 +164,16 @@ find ~/.local/share/memoryd/scopes -newer /tmp -name "*.md" -ls
 
 ```
 src/memoryd/
-  schema.py    # Pydantic Markdown frontmatter schema
-  scope.py     # cwd → scope_hash (git-root preferred)
-  storage.py   # save/load/list session markdowns
-  search.py    # ripgrep-based search
-  server.py    # FastMCP server with search_memory tool
-  cli.py       # `memoryd capture` for hook scripts
+  schema.py          # Pydantic Markdown frontmatter schema
+  scope.py           # cwd → scope_hash (git-root preferred)
+  storage.py         # save/load/list session markdowns
+  search.py          # ripgrep-based search
+  server.py          # FastMCP server with search_memory tool
+  cli.py             # `memoryd capture` / `mirror` / `setup` subcommands
+  mirror.py          # watchdog handler framework + _unscoped bucket（Plan 2.5）
+  mirror_codex.py    # Codex rollout_summary 转码（source=codex-rollout，Plan 2.5）
+  mirror_openclaw.py # OpenClaw session jsonl 转码（source=openclaw-fs，Plan 2.5）
+  setup.py           # 用户配置管理：notify swap / hooks 清理 / launchd 安装（Plan 2.5）
 
 tests/
   test_schema.py
@@ -178,6 +182,10 @@ tests/
   test_search.py
   test_cli.py
   test_server.py
+  test_mirror.py           # Plan 2.5
+  test_mirror_codex.py     # Plan 2.5
+  test_mirror_openclaw.py  # Plan 2.5
+  test_setup.py            # Plan 2.5
 ```
 
 Memory data root (default `~/.local/share/memoryd`):
@@ -187,8 +195,16 @@ scopes/
   <scope_hash>/
     sessions/
       2026-05-09-<session-id>.md
+  _unscoped/                  # 反推不到 scope 时兜底（Plan 2.5）
+    sessions/...
 logs/
   cc-session-end.log
+  codex-notify.log            # Plan 2.5 实时通路
+  openclaw-events.log         # Plan 2.5 OpenClaw SDK 事件
+  mirror.stdout.log           # Plan 2.5 launchd daemon
+  mirror.stderr.log
+probe/
+  notify-probe.log            # Plan 2.5 Phase 1 探针
 ```
 
 ## Run tests
