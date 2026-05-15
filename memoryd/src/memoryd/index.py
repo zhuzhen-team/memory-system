@@ -211,3 +211,39 @@ def open_index(path: Path | None = None) -> Index:
     conn.execute("PRAGMA foreign_keys = ON")
     _run_migrations(conn)
     return Index(conn)
+
+
+def rebuild_index(data_root: Path) -> dict:
+    """Re-scan all .md files under data_root/scopes/ and refresh SQLite.
+
+    Returns {"indexed": n, "errors": m} dict for visibility. Wipes index.db
+    first so stale rows are dropped. The .md walk matches the historical
+    behaviour of `memoryd rebuild-index`; sensitive scope .md.enc files are
+    left to mark-sensitive / load_session paths, not re-imported here.
+    """
+    from .storage import load_session  # local import to avoid cycle
+
+    db_path = data_root / "index.db"
+    if db_path.exists():
+        db_path.unlink()
+    idx = open_index(db_path)
+    scopes_dir = data_root / "scopes"
+    if not scopes_dir.exists():
+        idx.close()
+        return {"indexed": 0, "errors": 0}
+    indexed = 0
+    errors = 0
+    for md in scopes_dir.rglob("*.md"):
+        try:
+            mem = load_session(md)
+        except Exception:
+            errors += 1
+            continue
+        body_rel = str(md.relative_to(data_root))
+        try:
+            idx.index_memory(mem, body_path=body_rel)
+            indexed += 1
+        except Exception:
+            errors += 1
+    idx.close()
+    return {"indexed": indexed, "errors": errors}

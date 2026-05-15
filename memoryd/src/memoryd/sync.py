@@ -169,12 +169,57 @@ def import_(
 def _rebuild_index_quiet(data_root: Path) -> None:
     """Best-effort rebuild_index; never raise.
 
-    The actual rebuild lives in the CLI command (cmd_rebuild_index); there is
-    no module-level helper today. We try to import one if it ever appears, but
-    silently degrade to a warning so sync stays robust.
+    Wraps `memoryd.index.rebuild_index` so post-import sync stays robust even
+    if SQLite is transiently locked or the migrations directory disappears.
     """
     try:
-        from .index import rebuild_index  # type: ignore[attr-defined]
+        from .index import rebuild_index
         rebuild_index(data_root)
     except Exception as e:
         log.warning("post-import rebuild_index failed: %s", e)
+
+
+def status(data_root: Path, sync_dir: Path) -> dict:
+    """Return per-scope counts (local vs sync) plus _conflicts tally."""
+    state = read_state(sync_dir)
+    per_scope: dict[str, dict[str, int]] = {}
+    for p in iter_local_markdown(data_root):
+        parts = p.relative_to(data_root / "scopes").parts
+        if not parts:
+            continue
+        h = parts[0]
+        if h == "_conflicts":
+            continue
+        per_scope.setdefault(h, {"local": 0, "sync": 0})["local"] += 1
+    sync_scopes = sync_dir / "scopes"
+    if sync_scopes.exists():
+        for p in sync_scopes.rglob("*"):
+            if not p.is_file():
+                continue
+            if p.name == _STATE_FILENAME:
+                continue
+            if p.name in _SYNC_BLACKLIST_NAMES:
+                continue
+            if any(part in _SYNC_BLACKLIST_DIRS for part in p.parts):
+                continue
+            if not (p.suffix == ".md"
+                    or p.name.endswith(".md.enc")
+                    or p.name == ".memoryd-sensitive"):
+                continue
+            parts = p.relative_to(sync_scopes).parts
+            if not parts:
+                continue
+            h = parts[0]
+            if h == "_conflicts":
+                continue
+            per_scope.setdefault(h, {"local": 0, "sync": 0})["sync"] += 1
+    conflicts = 0
+    cdir = data_root / "scopes" / "_conflicts"
+    if cdir.exists():
+        conflicts = sum(1 for x in cdir.iterdir() if x.is_file())
+    return {
+        "sync_dir": str(sync_dir),
+        "state_entries": len(state),
+        "per_scope": per_scope,
+        "conflicts": conflicts,
+    }
