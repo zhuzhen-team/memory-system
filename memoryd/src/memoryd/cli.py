@@ -429,6 +429,9 @@ def cmd_merge(args: argparse.Namespace) -> int:
 
 
 def cmd_digest(args: argparse.Namespace) -> int:
+    if getattr(args, "tui", False):
+        from .tui.digest import run_tui
+        return run_tui(_data_root())
     from .governance.digest import build_digest, render_digest_text
     d = build_digest(_data_root())
     if args.json:
@@ -861,6 +864,11 @@ def main() -> int:
         "--notify",
         action="store_true",
         help="emit native desktop notification + optional SMTP email",
+    )
+    p_digest.add_argument(
+        "--tui",
+        action="store_true",
+        help="interactive textual TUI for approve/reject/merge",
     )
     p_digest.set_defaults(func=cmd_digest)
 

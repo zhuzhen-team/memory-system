@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -144,3 +145,83 @@ def analyze_session(
         idx.conn.commit()
     finally:
         idx.close()
+
+
+# ---------------------------------------------------------------------------
+# Module-level promotion-row helpers (used by TUI / future CLI commands).
+#
+# These deliberately only flip the SQLite status field; writing the actual
+# long-term-memory .md file is the job of the MCP `promote_to_long_term`
+# tool (which runs the full digest pipeline). After approving here the
+# user can re-run `memoryd digest` or invoke the MCP tool to realize the
+# change. Future tickets may bundle file emission into approve_promotion.
+# ---------------------------------------------------------------------------
+
+
+def list_pending_promotions(data_root: Path) -> list[dict]:
+    """List rows from promotions table with status='pending'.
+
+    Returns empty list if index.db does not yet exist.
+    """
+    db = data_root / "index.db"
+    if not db.exists():
+        return []
+    conn = sqlite3.connect(str(db))
+    try:
+        rows = conn.execute(
+            "SELECT id, source_session_slug, proposed_type, proposed_title, "
+            "       proposed_body, proposed_triggers, reasoning, status "
+            "FROM promotions WHERE status = 'pending' ORDER BY id DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    cols = [
+        "id",
+        "source_session_slug",
+        "proposed_type",
+        "proposed_title",
+        "proposed_body",
+        "proposed_triggers",
+        "reasoning",
+        "status",
+    ]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def approve_promotion(data_root: Path, promotion_id: int) -> None:
+    """Approve a promotion: mark status=approved.
+
+    Only flips the SQLite flag. See module docstring above for rationale.
+    """
+    db = data_root / "index.db"
+    if not db.exists():
+        raise FileNotFoundError(f"no index.db at {db}")
+    conn = sqlite3.connect(str(db))
+    try:
+        cur = conn.execute(
+            "UPDATE promotions SET status='approved' WHERE id = ?",
+            (promotion_id,),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(f"no promotion #{promotion_id}")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reject_promotion(data_root: Path, promotion_id: int) -> None:
+    """Reject a promotion: mark status=rejected."""
+    db = data_root / "index.db"
+    if not db.exists():
+        raise FileNotFoundError(f"no index.db at {db}")
+    conn = sqlite3.connect(str(db))
+    try:
+        cur = conn.execute(
+            "UPDATE promotions SET status='rejected' WHERE id = ?",
+            (promotion_id,),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(f"no promotion #{promotion_id}")
+        conn.commit()
+    finally:
+        conn.close()
