@@ -2,10 +2,10 @@
 
 Personal memory governance MCP server. Part of `project-management-personal`.
 
-**Status:** v0.1.0a0 — Walking Skeleton (plan 1 of 8)
+**Status:** v0.5.0 — Cross-platform install (plan 5 of 8)
 
 Currently supports:
-- macOS only
+- macOS / Linux / Windows
 - **Claude Code, Codex, and OpenClaw three clients share a single scope** (was: Claude Code only)
 - Single machine (multi-machine sync in plan 6)
 - Session capture only (decisions/preferences/promotions in plan 3)
@@ -339,6 +339,62 @@ memoryd audit --json                                           # JSON 输出
 - macOS only：Keychain 后端，Plan 5 加 Windows DPAPI / Linux Secret Service
 - 跨设备：sensitive scope 在新机需要重新 mark + 重新生成密钥（密钥不进 Plan 6 同步盘）
 - Web UI 审计页推迟到 Plan 7
+
+## Cross-platform install (Plan 5)
+
+memoryd v0.5.0 起 macOS / Linux / Windows 三平台都可用。
+- 加密：keyring 自动选 backend（Keychain / Credential Manager / Secret Service）
+- Daemon 自启：launchd / systemd user / Task Scheduler
+- Digest 通知：原生 GUI + 可选 SMTP
+
+### One-shot install
+
+```bash
+memoryd setup auto-install
+```
+
+按平台依次：
+- 装 cron（decay 03:00 daily + weekly digest Mon 09:00）
+- 写 CC SessionEnd hook（Python wrapper）
+
+### Granular control
+
+```bash
+memoryd setup install-cron --decay
+memoryd setup install-cron --digest
+memoryd setup install-cron --all
+memoryd setup install-cc-hook
+```
+
+### 反操作
+
+```bash
+memoryd setup uninstall-cron --all
+```
+
+### SMTP digest（可选）
+
+`~/.config/memoryd/config.toml`：
+
+```toml
+[notify.smtp]
+enabled = true
+host = "smtp.gmail.com"
+port = 587
+use_tls = true
+from = "you@gmail.com"
+to = "you@gmail.com"
+username = "you@gmail.com"
+password_env = "MEMORYD_SMTP_PW"
+```
+
+`export MEMORYD_SMTP_PW=<app-password>` 后 `digest --notify` 同时发邮件。
+
+### Limitations
+
+- Linux：需 secret-service daemon（gnome-keyring / KeePassXC）
+- Windows：BurntToast 未装时降级 msg.exe
+- 老 Linux systemd：可能需 `loginctl enable-linger <user>` 让 user timer 在登录前跑
 
 ## Limitations of v1.0-α
 

@@ -1,0 +1,42 @@
+# Plan 5 Phase 1 用户手册（cross-platform install + cc-hook swap）
+
+## 1. install-cron --all（macOS 实测）
+
+cd /Users/abble/project-management-personal/memoryd
+uv run memoryd setup install-cron --all
+ls -la ~/Library/LaunchAgents/com.memoryd.*.plist
+launchctl print gui/$(id -u)/com.memoryd.decay-sweep | head
+launchctl print gui/$(id -u)/com.memoryd.weekly-digest | head
+
+# 反操作：
+uv run memoryd setup uninstall-cron --all
+
+## 2. cc-session-end-hook 切到 .py
+
+cp ~/.claude/settings.json ~/.claude/backups/settings.json.before-plan5
+uv run memoryd setup install-cc-hook
+diff <(jq '.hooks.SessionEnd' ~/.claude/settings.json) \
+     <(jq '.hooks.SessionEnd' ~/.claude/backups/settings.json.before-plan5)
+# 跑一次 CC turn，确认 source=claude-code 的 .md 仍正常生成
+find ~/.local/share/memoryd/scopes -newer /tmp -name "*.md" -ls
+
+## 3. digest --notify 实测（macOS）
+
+uv run memoryd digest --notify
+# 屏幕右上角应出现 osascript 通知
+
+## 4. SMTP 可选实测
+
+# 在 ~/.config/memoryd/config.toml 里配 [notify.smtp]，export MEMORYD_SMTP_PW=<pw>
+# 然后再跑 digest --notify 查收件箱
+
+## 5. Linux / Windows 真机（用户在那台机器跑）
+
+# Linux:
+memoryd setup auto-install
+systemctl --user list-timers | grep memoryd
+
+# Windows:
+memoryd setup auto-install
+schtasks /Query /TN com.memoryd.decay-sweep
+schtasks /Query /TN com.memoryd.weekly-digest
