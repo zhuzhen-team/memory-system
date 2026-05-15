@@ -1,0 +1,84 @@
+# Plan 6 Phase 1 用户手册（multi-device sync + passphrase mode）
+
+## 1. 配置 sync dir
+
+# ~/.config/memoryd/config.toml 加：
+[sync]
+enabled = true
+dir = "~/Library/CloudStorage/Dropbox/memoryd"
+auto_export_on_session_end = true
+auto_import_on_session_start = true
+
+mkdir -p ~/Library/CloudStorage/Dropbox/memoryd  # 或对应平台同步盘路径
+
+## 2. 单次 export
+
+cd /Users/abble/project-management-personal/memoryd
+uv run memoryd sync export
+uv run memoryd sync status
+uv run memoryd sync status --json | jq
+
+# 同步盘上应看到 scopes/<hash>/*.md 镜像
+ls -la ~/Library/CloudStorage/Dropbox/memoryd/scopes/
+
+## 3. 模拟"换机"测试
+
+# 在 sandbox 目录模拟：
+SANDBOX=/tmp/memoryd-newmachine
+rm -rf $SANDBOX && mkdir -p $SANDBOX/data $SANDBOX/sync
+
+# 把当前 sync dir 复制到 sandbox/sync
+cp -R ~/Library/CloudStorage/Dropbox/memoryd/* $SANDBOX/sync/
+
+# 在 sandbox 跑 import（用 env override data root）
+MEMORYD_DATA_ROOT=$SANDBOX/data uv run python -c "
+from memoryd.sync import import_
+from pathlib import Path
+r = import_(Path('$SANDBOX/data'), Path('$SANDBOX/sync'))
+print(f'copied={r.copied} skipped={r.skipped} conflicts={r.conflicts}')
+"
+
+# 验证 sandbox data 有 .md
+find $SANDBOX/data -name "*.md" | head
+
+## 4. Passphrase 模式实测
+
+# 4a. 进 passphrase 模式
+sed -i.bak 's/key_source = "random"/key_source = "passphrase"/' ~/.config/memoryd/config.toml
+# 或手动编辑 [sensitive] key_source = "passphrase"
+
+# 4b. 设 master passphrase
+export MEMORYD_MASTER_PASSPHRASE='my-12-or-more-chars-master-pw'
+
+# 4c. 跑一遍 mark-sensitive 在 sandbox scope
+mkdir -p /tmp/test-sensitive-scope
+cd /tmp/test-sensitive-scope
+git init  # 让它成为 scope root
+echo "test memory" > test.md
+# 此处依赖 memoryd capture 流程，先省略；只测 enc 模块直接调
+python -c "
+from memoryd.enc import get_or_create_scope_key, encrypt_bytes, decrypt_bytes
+import os
+os.environ['MEMORYD_MASTER_PASSPHRASE'] = 'my-12-or-more-chars-master-pw'
+# 模拟 passphrase 模式：设 cfg 后跑
+import memoryd.config
+cfg = memoryd.config.load_config()
+print('key_source =', cfg.sensitive.key_source)
+k = get_or_create_scope_key('test_scope_abc')
+print('key derived, len =', len(k))
+# 加解密 roundtrip
+ct = encrypt_bytes('test_scope_abc', b'hello world')
+pt = decrypt_bytes('test_scope_abc', ct)
+print('roundtrip:', pt)
+"
+
+# 4d. 在另一进程同样 passphrase → 同一 key → 能解第一进程的 ct
+# （通过 export ct base64 字符串 + 第二进程 decrypt 验证；省略具体步骤）
+
+## 5. SessionEnd auto-export 实测
+
+# Plan 5 install-cc-hook 已让 ~/.claude/settings.json 走 Python wrapper
+# 现在 auto_export_on_session_end=true，跑一轮 CC turn 后：
+tail ~/.local/share/memoryd/logs/cc-session-end.log
+ls -la ~/Library/CloudStorage/Dropbox/memoryd/scopes/<hash>/sessions/*.md | tail
+# 新生成的 session .md 应也出现在 sync dir

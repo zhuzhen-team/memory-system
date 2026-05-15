@@ -11,4 +11,13 @@ try {
 } catch {
     # best-effort; never block CC
 }
+
+# Fork sync export --auto. memoryd internally honors [sync] enabled +
+# auto_export_on_session_end gates, so this silently no-ops when not configured.
+try {
+    Start-Process -FilePath $memoryd -ArgumentList "sync","export","--auto" `
+        -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
+} catch {
+    # best-effort
+}
 exit 0

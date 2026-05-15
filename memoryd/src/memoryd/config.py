@@ -54,21 +54,45 @@ class NotifyConfig:
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
 
 
+@dataclass
+class SyncConfig:
+    enabled: bool = False
+    dir: str = ""
+    auto_export_on_session_end: bool = False
+    auto_import_on_session_start: bool = False
+
+
+@dataclass
+class SensitiveConfig:
+    key_source: str = "random"   # "random" | "passphrase"
+    kdf_iters: int = 600000
+
+
 class Config(dict):
-    """`dict` subclass that also exposes `.notify` as a typed NotifyConfig.
+    """`dict` subclass that also exposes typed dataclass attributes.
 
     Existing call sites do `cfg["llm"]["provider"]` (dict access) and
-    `json.dumps(cfg)` (dict serialisation). New Plan 5 call sites do
-    `cfg.notify.smtp.enabled` (attribute access). Keeping both shapes
-    avoids touching legacy code paths.
+    `json.dumps(cfg)` (dict serialisation). New Plan 5/6 call sites do
+    `cfg.notify.smtp.enabled` / `cfg.sync.enabled` / `cfg.sensitive.key_source`
+    (attribute access). Keeping both shapes avoids touching legacy code paths.
     """
 
     notify: NotifyConfig
+    sync: SyncConfig
+    sensitive: SensitiveConfig
 
-    def __init__(self, data: dict[str, Any], notify: NotifyConfig) -> None:
+    def __init__(
+        self,
+        data: dict[str, Any],
+        notify: NotifyConfig,
+        sync: SyncConfig,
+        sensitive: SensitiveConfig,
+    ) -> None:
         super().__init__(data)
         # Use object.__setattr__ to avoid odd dict.__setitem__ aliasing.
         object.__setattr__(self, "notify", notify)
+        object.__setattr__(self, "sync", sync)
+        object.__setattr__(self, "sensitive", sensitive)
 
 
 def get_config_path() -> Path:
@@ -119,14 +143,39 @@ def _load_notify(data: dict[str, Any]) -> NotifyConfig:
     return NotifyConfig(smtp=smtp)
 
 
+def _load_sync(data: dict[str, Any]) -> SyncConfig:
+    """Parse `[sync]` section into SyncConfig."""
+    raw = data.get("sync") or {}
+    return SyncConfig(
+        enabled=bool(raw.get("enabled", False)),
+        dir=str(raw.get("dir", "")),
+        auto_export_on_session_end=bool(raw.get("auto_export_on_session_end", False)),
+        auto_import_on_session_start=bool(raw.get("auto_import_on_session_start", False)),
+    )
+
+
+def _load_sensitive(data: dict[str, Any]) -> SensitiveConfig:
+    """Parse `[sensitive]` section into SensitiveConfig."""
+    raw = data.get("sensitive") or {}
+    return SensitiveConfig(
+        key_source=str(raw.get("key_source", "random")),
+        kdf_iters=int(raw.get("kdf_iters", 600000)),
+    )
+
+
 def load_config() -> Config:
     p = _config_path()
     if not p.exists():
         data = dict(DEFAULT_CONFIG)
-        return Config(data, _load_notify({}))
+        return Config(data, _load_notify({}), _load_sync({}), _load_sensitive({}))
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
     merged = _merge_dict(DEFAULT_CONFIG, parsed)
-    return Config(merged, _load_notify(parsed))
+    return Config(
+        merged,
+        _load_notify(parsed),
+        _load_sync(parsed),
+        _load_sensitive(parsed),
+    )
 
 
 def show_config() -> Config:

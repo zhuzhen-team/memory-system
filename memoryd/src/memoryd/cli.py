@@ -10,8 +10,10 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -155,6 +157,53 @@ def _spawn_analyze(session_slug: str) -> None:
         pass
 
 
+_AUTO_IMPORT_THROTTLE_SEC = 300  # 5 minutes
+
+
+def _maybe_auto_import() -> None:
+    """Pre-capture hook: fork `memoryd sync import --auto` if user opted in.
+
+    Gated on `[sync] enabled=true AND auto_import_on_session_start=true`.
+    Throttled via mtime of `<data_root>/last_import_at` marker to avoid
+    fork avalanches when rapid-fire sessions land.
+
+    Never raises; capture flow must continue regardless.
+    """
+    try:
+        from .config import load_config
+        cfg = load_config()
+        if not (cfg.sync.enabled and cfg.sync.auto_import_on_session_start):
+            return
+    except Exception:
+        return
+    # Throttle marker lives under user data dir so respects MEMORYD_DATA_ROOT
+    # indirectly via Path.home() (tests patch Path.home).
+    marker = Path.home() / ".local" / "share" / "memoryd" / "last_import_at"
+    if marker.exists():
+        try:
+            if time.time() - marker.stat().st_mtime < _AUTO_IMPORT_THROTTLE_SEC:
+                return
+        except OSError:
+            pass
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        # If we cannot write marker, still fork once (best-effort, no throttle).
+        pass
+    memoryd_bin = shutil.which("memoryd") or sys.executable
+    try:
+        subprocess.Popen(
+            [memoryd_bin, "sync", "import", "--auto"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass
+
+
 def cmd_analyze_session(args: argparse.Namespace) -> int:
     memory_root = _data_root()
     try:
@@ -168,6 +217,9 @@ def cmd_analyze_session(args: argparse.Namespace) -> int:
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
+    # Best-effort: fire-and-forget background sync import if user opted in.
+    # Throttled (5min) to avoid fork avalanches on rapid sessions.
+    _maybe_auto_import()
     raw = sys.stdin.read()
     if not raw.strip():
         print("error: empty stdin; expected JSON payload", file=sys.stderr)
@@ -262,28 +314,13 @@ def cmd_mirror(args: argparse.Namespace) -> int:
 
 
 def cmd_rebuild_index(args: argparse.Namespace) -> int:
-    memory_root = _data_root()
-    db_path = memory_root / "index.db"
-    if db_path.exists():
-        db_path.unlink()
-    idx = _open_idx(db_path)
-    scopes_dir = memory_root / "scopes"
-    if not scopes_dir.exists():
-        idx.close()
-        print("rebuild-index: no scopes dir; nothing to do", file=sys.stderr)
-        return 0
-    count = 0
-    for md in scopes_dir.rglob("*.md"):
-        try:
-            mem = load_session(md)
-        except Exception as e:
-            print(f"skip {md}: {e}", file=sys.stderr)
-            continue
-        body_rel = str(md.relative_to(memory_root))
-        idx.index_memory(mem, body_path=body_rel)
-        count += 1
-    idx.close()
-    print(f"rebuild-index: {count} memories indexed", file=sys.stderr)
+    from .index import rebuild_index
+    result = rebuild_index(_data_root())
+    print(
+        f"rebuild-index: {result['indexed']} memories indexed "
+        f"({result['errors']} errors)",
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -572,6 +609,111 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sync_export(args: argparse.Namespace) -> int:
+    from .sync import expand_sync_dir, export
+    from .config import load_config
+    cfg = load_config()
+    # --auto: triggered by SessionEnd hook. Silently no-op unless user enabled
+    # both sync.enabled and sync.auto_export_on_session_end.
+    if getattr(args, "auto", False):
+        if not (cfg.sync.enabled and cfg.sync.auto_export_on_session_end):
+            return 0
+    if not cfg.sync.dir:
+        if getattr(args, "auto", False):
+            return 0  # auto mode never errors out
+        print(
+            "sync.dir 未配置；编辑 ~/.config/memoryd/config.toml [sync] dir=...",
+            file=sys.stderr,
+        )
+        return 2
+    sync_dir = expand_sync_dir(cfg.sync.dir)
+    report = export(
+        _data_root(),
+        sync_dir,
+        scope_hash=args.scope,
+        dry_run=args.dry_run,
+    )
+    print(
+        f"export: copied={report.copied} skipped={report.skipped} "
+        f"dry_run={report.dry_run}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_sync_import(args: argparse.Namespace) -> int:
+    from .sync import expand_sync_dir, import_
+    from .config import load_config
+    cfg = load_config()
+    # --auto: triggered pre-capture. Silently no-op unless user enabled both
+    # sync.enabled and sync.auto_import_on_session_start.
+    if getattr(args, "auto", False):
+        if not (cfg.sync.enabled and cfg.sync.auto_import_on_session_start):
+            return 0
+    if not cfg.sync.dir:
+        if getattr(args, "auto", False):
+            return 0
+        print("sync.dir 未配置", file=sys.stderr)
+        return 2
+    sync_dir = expand_sync_dir(cfg.sync.dir)
+    report = import_(
+        _data_root(),
+        sync_dir,
+        scope_hash=args.scope,
+        dry_run=args.dry_run,
+    )
+    print(
+        f"import: copied={report.copied} skipped={report.skipped} "
+        f"conflicts={report.conflicts} dry_run={report.dry_run}",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_sync_status(args: argparse.Namespace) -> int:
+    from .sync import expand_sync_dir, status
+    from .config import load_config
+    cfg = load_config()
+    if not cfg.sync.dir:
+        print("sync.dir 未配置", file=sys.stderr)
+        return 2
+    sync_dir = expand_sync_dir(cfg.sync.dir)
+    result = status(_data_root(), sync_dir)
+    if getattr(args, "as_json", False):
+        import json as _j
+        print(_j.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        print(f"sync dir:   {result['sync_dir']}")
+        print(f"state entries: {result['state_entries']}")
+        for h, counts in sorted(result["per_scope"].items()):
+            sym = "ok" if counts["local"] == counts["sync"] else "!!"
+            print(
+                f"  {h}  local {counts['local']} / sync {counts['sync']}  {sym}"
+            )
+        print(f"_conflicts: {result['conflicts']}")
+    return 0
+
+
+def _cmd_set_passphrase(args: argparse.Namespace) -> int:
+    import getpass
+    from . import passphrase
+    p1 = getpass.getpass("Master passphrase: ")
+    p2 = getpass.getpass("Confirm: ")
+    if p1 != p2:
+        print("passphrase mismatch", file=sys.stderr)
+        return 1
+    try:
+        passphrase.set_(p1)
+    except passphrase.PassphraseError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"failed to store passphrase: {e}", file=sys.stderr)
+        return 1
+    print("master passphrase stored locally", file=sys.stderr)
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.config_action == "show":
         import json as _j
@@ -761,6 +903,43 @@ def main() -> int:
     p_revoke.add_argument("scope_path")
     p_revoke.add_argument("--task", default=None)
     p_revoke.set_defaults(func=cmd_revoke)
+
+    # sync export / import / status (Plan 6)
+    p_sync = subs.add_parser(
+        "sync",
+        help="multi-device sync (raw .md mirror against cfg.sync.dir)",
+    )
+    sync_subs = p_sync.add_subparsers(dest="sync_cmd", required=True)
+
+    p_sex = sync_subs.add_parser("export", help="mirror local memories into sync dir")
+    p_sex.add_argument("--scope", default=None, help="filter by scope_hash")
+    p_sex.add_argument("--dry-run", action="store_true")
+    p_sex.add_argument(
+        "--auto",
+        action="store_true",
+        help="only run if [sync] enabled and auto_export_on_session_end (hook use)",
+    )
+    p_sex.set_defaults(func=_cmd_sync_export)
+
+    p_sim = sync_subs.add_parser("import", help="pull from sync dir; conflicts go to _conflicts/")
+    p_sim.add_argument("--scope", default=None, help="filter by scope_hash")
+    p_sim.add_argument("--dry-run", action="store_true")
+    p_sim.add_argument(
+        "--auto",
+        action="store_true",
+        help="only run if [sync] enabled and auto_import_on_session_start (hook use)",
+    )
+    p_sim.set_defaults(func=_cmd_sync_import)
+
+    p_sst = sync_subs.add_parser("status", help="show per-scope sync counts")
+    p_sst.add_argument("--json", action="store_true", dest="as_json")
+    p_sst.set_defaults(func=_cmd_sync_status)
+
+    p_pp = subs.add_parser(
+        "set-passphrase",
+        help="set memoryd master passphrase (Plan 6 sensitive scope cross-device)",
+    )
+    p_pp.set_defaults(func=_cmd_set_passphrase)
 
     args = parser.parse_args()
     return args.func(args)
