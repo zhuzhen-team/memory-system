@@ -240,6 +240,7 @@ v1 上线后，下面任一条**未达成**即认为 v1 未真正交付：
 | 日期 | 改了什么 | 为什么 |
 |---|---|---|
 | 2026-05-09 | 初版 | brainstorm 完成 |
+| 2026-05-15 | §4.5 #17 增补可选 passphrase-derived 模式 | Plan 6 多电脑同步 light brainstorming：用户选 passphrase 推导以使 `.md.enc` 跨设备可解。**原默认（per-scope random key 进本地 keychain）保留为 v1 default**；passphrase 模式为 opt-in，由 `[sensitive] key_source = "passphrase"` 启用，trade-off：以"用户须记住一个独立 master passphrase"换取"敏感记忆跨设备直接可用"。Plan 6 实施后本条不再视为冲突。 |
 
 ---
 
