@@ -31,6 +31,7 @@ def _keyring():
 
 
 def get_or_create_scope_key(scope_hash: str) -> bytes:
+    _check_backend_available()
     kr = _keyring()
     existing = kr.get_password(SERVICE, scope_hash)
     if existing:
@@ -65,3 +66,29 @@ def decrypt_bytes(scope_hash: str, blob: bytes) -> bytes:
     nonce, ct = raw[:12], raw[12:]
     aes = AESGCM(key)
     return aes.decrypt(nonce, ct, scope_hash.encode())
+
+
+def _check_backend_available() -> None:
+    """Raise EncError with platform-specific install hint if no keyring backend."""
+    kr = _keyring()
+    get_kr = getattr(kr, "get_keyring", None)
+    if get_kr is None:
+        # Stubbed keyring (e.g. tests inject a fake): nothing to check.
+        return
+    backend = get_kr()
+    # keyring.backends.fail.Keyring is the no-op fallback when nothing usable
+    if backend.__class__.__module__.endswith(".fail"):
+        from .platforms import detect
+        plat = detect()
+        if plat == "linux":
+            hint = (
+                "No usable keyring backend. Install one:\n"
+                "  Debian/Ubuntu: sudo apt install gnome-keyring libsecret-tools\n"
+                "  Fedora:        sudo dnf install gnome-keyring\n"
+                "  Or install KeePassXC and enable Secret Service Integration."
+            )
+        elif plat == "windows":
+            hint = "Windows Credential Manager unavailable — check user session not headless."
+        else:
+            hint = "macOS Keychain unavailable — unlock keychain and retry."
+        raise EncError(hint)
