@@ -47,3 +47,36 @@ def test_set_key_rejects_invalid_path(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(tmp_path))
     with pytest.raises(ValueError, match="path"):
         set_config_key("bare", "value")  # missing dot → invalid
+
+
+def test_load_notify_smtp_section(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("""
+[notify.smtp]
+enabled = true
+host = "smtp.example.com"
+port = 465
+use_tls = false
+from = "me@example.com"
+to = "you@example.com"
+username = "me"
+password_env = "PW"
+""")
+    monkeypatch.setattr("memoryd.config._config_path", lambda: cfg_file)
+    cfg = load_config()
+    assert cfg.notify.smtp.enabled is True
+    assert cfg.notify.smtp.host == "smtp.example.com"
+    assert cfg.notify.smtp.port == 465
+    assert cfg.notify.smtp.use_tls is False
+    assert cfg.notify.smtp.from_addr == "me@example.com"
+    assert cfg.notify.smtp.to_addr == "you@example.com"
+    assert cfg.notify.smtp.password_env == "PW"
+
+
+def test_load_notify_defaults_when_section_missing(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("")
+    monkeypatch.setattr("memoryd.config._config_path", lambda: cfg_file)
+    cfg = load_config()
+    assert cfg.notify.smtp.enabled is False
+    assert cfg.notify.smtp.host == ""
