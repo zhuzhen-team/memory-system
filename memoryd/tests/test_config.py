@@ -80,3 +80,52 @@ def test_load_notify_defaults_when_section_missing(tmp_path, monkeypatch):
     cfg = load_config()
     assert cfg.notify.smtp.enabled is False
     assert cfg.notify.smtp.host == ""
+
+
+def test_load_sync_config_defaults(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("")
+    monkeypatch.setattr("memoryd.config._config_path", lambda: cfg_file)
+    cfg = load_config()
+    assert cfg.sync.enabled is False
+    assert cfg.sync.dir == ""
+    assert cfg.sync.auto_export_on_session_end is False
+    assert cfg.sync.auto_import_on_session_start is False
+
+
+def test_load_sync_config_from_toml(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("""
+[sync]
+enabled = true
+dir = "~/Dropbox/memoryd"
+auto_export_on_session_end = true
+auto_import_on_session_start = true
+""")
+    monkeypatch.setattr("memoryd.config._config_path", lambda: cfg_file)
+    cfg = load_config()
+    assert cfg.sync.enabled is True
+    assert cfg.sync.dir == "~/Dropbox/memoryd"
+    assert cfg.sync.auto_export_on_session_end is True
+
+
+def test_load_sensitive_config_defaults(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("")
+    monkeypatch.setattr("memoryd.config._config_path", lambda: cfg_file)
+    cfg = load_config()
+    assert cfg.sensitive.key_source == "random"
+    assert cfg.sensitive.kdf_iters == 600000
+
+
+def test_load_sensitive_config_passphrase_mode(tmp_path, monkeypatch):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("""
+[sensitive]
+key_source = "passphrase"
+kdf_iters = 1200000
+""")
+    monkeypatch.setattr("memoryd.config._config_path", lambda: cfg_file)
+    cfg = load_config()
+    assert cfg.sensitive.key_source == "passphrase"
+    assert cfg.sensitive.kdf_iters == 1200000
