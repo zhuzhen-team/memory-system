@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
@@ -62,3 +62,48 @@ def write_state(sync_dir: Path, state: dict) -> None:
 def relative_key(data_root: Path, path: Path) -> str:
     """Stable key for state manifest: scope_hash/type/slug.ext."""
     return str(path.relative_to(data_root / "scopes")).replace("\\", "/")
+
+
+@dataclass
+class ExportReport:
+    copied: int = 0
+    skipped: int = 0
+    dry_run: bool = False
+    files: list[str] = field(default_factory=list)
+
+
+def export(
+    data_root: Path,
+    sync_dir: Path,
+    *,
+    scope_hash: str | None = None,
+    dry_run: bool = False,
+) -> ExportReport:
+    """Mirror local markdown to sync dir; incremental via fingerprint state."""
+    state = read_state(sync_dir)
+    new_state = dict(state)
+    report = ExportReport(dry_run=dry_run)
+    for src in iter_local_markdown(data_root):
+        key = relative_key(data_root, src)
+        if scope_hash and not key.startswith(scope_hash + "/"):
+            continue
+        fp = _fingerprint(src)
+        if state.get(key) == fp:
+            report.skipped += 1
+            continue
+        dst = sync_dir / "scopes" / key
+        if not dry_run:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+        new_state[key] = fp
+        report.copied += 1
+        report.files.append(key)
+    if not dry_run:
+        write_state(sync_dir, new_state)
+    return report
+
+
+def _fingerprint(path: Path) -> str:
+    """sha256 of file bytes; cheap, deterministic, no SQLite round-trip needed."""
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]

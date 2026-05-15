@@ -62,3 +62,99 @@ def test_iter_local_markdown_handles_missing_scopes_dir(tmp_path):
     """If scopes/ doesn't exist yet, yield nothing."""
     out = list(iter_local_markdown(tmp_path))
     assert out == []
+
+
+from memoryd.sync import _fingerprint, export
+
+
+def _make_md(root, scope, type_, slug, body="x"):
+    p = root / "scopes" / scope / type_ / f"{slug}.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_export_copies_new_md(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    _make_md(data_root, "h1", "sessions", "a", body="hello")
+    report = export(data_root, sync_dir)
+    assert report.copied == 1
+    assert report.skipped == 0
+    dst = sync_dir / "scopes" / "h1" / "sessions" / "a.md"
+    assert dst.exists()
+    assert dst.read_text() == "hello"
+
+
+def test_export_skips_unchanged(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    _make_md(data_root, "h1", "sessions", "a", body="hello")
+    export(data_root, sync_dir)
+    # second run: nothing changed
+    report = export(data_root, sync_dir)
+    assert report.copied == 0
+    assert report.skipped == 1
+
+
+def test_export_dry_run_writes_nothing(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    _make_md(data_root, "h1", "sessions", "a")
+    report = export(data_root, sync_dir, dry_run=True)
+    assert report.copied == 1
+    assert not (sync_dir / "scopes" / "h1" / "sessions" / "a.md").exists()
+    # state file NOT written either
+    from memoryd.sync import _STATE_FILENAME
+    assert not (sync_dir / _STATE_FILENAME).exists()
+
+
+def test_export_filters_by_scope(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    _make_md(data_root, "h1", "sessions", "a")
+    _make_md(data_root, "h2", "sessions", "b")
+    report = export(data_root, sync_dir, scope_hash="h1")
+    assert report.copied == 1
+    assert (sync_dir / "scopes" / "h1" / "sessions" / "a.md").exists()
+    assert not (sync_dir / "scopes" / "h2" / "sessions" / "b.md").exists()
+
+
+def test_export_skips_blacklist(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    _make_md(data_root, "h1", "sessions", "a")
+    # poisoned blacklist files
+    (data_root / "scopes" / "h1" / "index.db").write_text("db")
+    (data_root / "scopes" / "h1" / "audit").mkdir()
+    (data_root / "scopes" / "h1" / "audit" / "audit.jsonl").write_text("{}")
+    (data_root / "scopes" / "h1" / "logs").mkdir()
+    (data_root / "scopes" / "h1" / "logs" / "x.log").write_text("log")
+    report = export(data_root, sync_dir)
+    assert report.copied == 1
+    assert not (sync_dir / "scopes" / "h1" / "index.db").exists()
+    assert not (sync_dir / "scopes" / "h1" / "audit").exists()
+    assert not (sync_dir / "scopes" / "h1" / "logs").exists()
+
+
+def test_export_state_file_persisted(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    _make_md(data_root, "h1", "sessions", "a")
+    export(data_root, sync_dir)
+    from memoryd.sync import _STATE_FILENAME
+    state = (sync_dir / _STATE_FILENAME).read_text()
+    import json
+    parsed = json.loads(state)
+    assert "h1/sessions/a.md" in parsed
+
+
+def test_export_picks_up_modified_file(tmp_path):
+    data_root = tmp_path / "data"
+    sync_dir = tmp_path / "sync"
+    p = _make_md(data_root, "h1", "sessions", "a", body="v1")
+    export(data_root, sync_dir)
+    p.write_text("v2", encoding="utf-8")
+    report = export(data_root, sync_dir)
+    assert report.copied == 1
+    assert (sync_dir / "scopes" / "h1" / "sessions" / "a.md").read_text() == "v2"
