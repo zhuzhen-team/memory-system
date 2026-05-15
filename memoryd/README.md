@@ -2,12 +2,12 @@
 
 Personal memory governance MCP server. Part of `project-management-personal`.
 
-**Status:** v0.5.0 — Cross-platform install (plan 5 of 8)
+**Status:** v0.6.0 — Multi-device sync (plan 6 of 8)
 
 Currently supports:
 - macOS / Linux / Windows
 - **Claude Code, Codex, and OpenClaw three clients share a single scope** (was: Claude Code only)
-- Single machine (multi-machine sync in plan 6)
+- Multi-device sync via raw .md mirror to user-configured sync dir (Plan 6)
 - Session capture only (decisions/preferences/promotions in plan 3)
 - Plain Markdown storage (encryption in plan 4)
 - ripgrep-based search (semantic search in plan 3)
@@ -395,6 +395,76 @@ password_env = "MEMORYD_SMTP_PW"
 - Linux：需 secret-service daemon（gnome-keyring / KeePassXC）
 - Windows：BurntToast 未装时降级 msg.exe
 - 老 Linux systemd：可能需 `loginctl enable-linger <user>` 让 user timer 在登录前跑
+
+## Multi-device sync (Plan 6)
+
+memoryd v0.6.0 起多电脑同步通过用户自配同步盘（坚果云 / iCloud / Dropbox）镜像裸 .md 文件。Markdown 是 source of truth；SQLite index / audit log / grants / Keychain 密钥都不进同步盘。
+
+### 配置
+
+`~/.config/memoryd/config.toml`：
+
+```toml
+[sync]
+enabled = true
+dir = "~/Library/CloudStorage/Dropbox/memoryd"   # 用户选自己的同步盘
+auto_export_on_session_end = true
+auto_import_on_session_start = true
+
+[sensitive]
+key_source = "passphrase"      # 默认 "random"（Plan 4 行为）；passphrase 启用 Plan 6 跨设备
+kdf_iters = 600000
+```
+
+### 命令
+
+```bash
+memoryd sync export                 # 增量 mirror local → sync dir
+memoryd sync export --scope=<hash>  # 仅指定 scope
+memoryd sync export --dry-run
+
+memoryd sync import                 # 反向：sync dir → local；自动 rebuild-index
+memoryd sync status                 # per-scope counts + _conflicts
+memoryd sync status --json          # JSON
+
+memoryd set-passphrase              # 进 passphrase 模式后用
+```
+
+### 冲突解决
+
+`memoryd sync import` 检测到本地和 sync dir 同 slug 但 fingerprint 不同时：
+- 本地版备份到 `~/.local/share/memoryd/scopes/_conflicts/<slug>-<fp8>.md`
+- sync 版上位
+- 用户后续在 digest 复盘 / 手动 merge
+
+### Passphrase 模式
+
+敏感作用域跨设备同步的 trade-off：
+
+- **random**（Plan 4 default）：每个 scope 一 32B 随机 key，本地 OS keyring 存。换机不能解原 `.md.enc`，用户在新机重 mark-sensitive。
+- **passphrase**（Plan 6 opt-in）：用户在所有机器跑 `memoryd set-passphrase` 输入同一短语；32B key 用 PBKDF2-HMAC-SHA256(passphrase, salt=scope_hash, iters=600k) 推导。`.md.enc` 在所有机器都可解。
+
+切换：
+
+```bash
+memoryd config set sensitive.key_source passphrase   # 待 memoryd config set 子命令完成；
+                                                      # 暂时直接编辑 config.toml
+export MEMORYD_MASTER_PASSPHRASE='your-12-char-or-more'  # CI / 临时；优先于 keyring
+memoryd set-passphrase                                # 持久化到 OS keyring
+```
+
+### 跨平台 scope_hash 一致性 caveat
+
+scope_hash 派生自 resolved 路径。macOS `/Users/<u>/projects/foo` vs Linux `/home/<u>/projects/foo` → 不同 scope_hash → 同一逻辑项目在新机器算作新 scope。
+
+v1 解决方案：保持机器间 home dir 布局一致（如 symlink `/Users/<u>` → `/home/<u>`），或在新机器手动 `memoryd move-scope <old_hash> <new_hash>`（v2 自动从 git remote 派生）。
+
+### Limitations
+
+- SQLite index.db 永不进同步盘（spec §4.7 #26 避免 WAL 锁损坏）
+- Audit log / grants / Keychain 密钥不进同步盘（安全边界）
+- passphrase 忘记 → 所有 `.md.enc` 永久无法解（无 recovery）
+- 跨平台路径差异需手动 align（v2 fix）
 
 ## Limitations of v1.0-α
 
