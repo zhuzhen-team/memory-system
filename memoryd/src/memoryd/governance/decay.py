@@ -23,12 +23,16 @@ FORGOTTEN_AFTER_SF = 90     # days soft-forgotten with no recall → physical mo
 
 
 def _parse_iso(s: str | None) -> datetime | None:
+    """Parse ISO timestamp; assume UTC if naive (Plan 1 capture wrote naive)."""
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _age_days(now: datetime, ref_iso: str | None) -> float:
