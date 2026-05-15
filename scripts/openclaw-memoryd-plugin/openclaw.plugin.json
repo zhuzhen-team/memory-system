@@ -1,7 +1,6 @@
 {
   "id": "memoryd-openclaw",
   "name": "memoryd OpenClaw bridge",
-  "kind": "memory",
   "activation": {
     "onStartup": true
   },
