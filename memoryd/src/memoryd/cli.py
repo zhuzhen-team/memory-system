@@ -941,8 +941,21 @@ def main() -> int:
     )
     p_pp.set_defaults(func=_cmd_set_passphrase)
 
+    p_web = subs.add_parser(
+        "web",
+        help="launch local browse dashboard (FastAPI on 127.0.0.1)",
+    )
+    p_web.add_argument("--port", type=int, default=None)
+    p_web.add_argument("--no-browser", action="store_true")
+    p_web.set_defaults(func=_cmd_web)
+
     args = parser.parse_args()
     return args.func(args)
+
+
+def _cmd_web(args: argparse.Namespace) -> int:
+    from .web.server import run
+    return run(port=args.port, open_browser=not args.no_browser)
 
 
 if __name__ == "__main__":
