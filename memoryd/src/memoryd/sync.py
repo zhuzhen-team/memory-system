@@ -107,3 +107,74 @@ def _fingerprint(path: Path) -> str:
     """sha256 of file bytes; cheap, deterministic, no SQLite round-trip needed."""
     import hashlib
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+@dataclass
+class ImportReport:
+    copied: int = 0
+    skipped: int = 0
+    conflicts: int = 0
+    dry_run: bool = False
+
+
+def import_(
+    data_root: Path,
+    sync_dir: Path,
+    *,
+    scope_hash: str | None = None,
+    dry_run: bool = False,
+) -> ImportReport:
+    """Pull from sync dir to local; resolve conflicts into _conflicts/<slug>-<fp8>.md."""
+    report = ImportReport(dry_run=dry_run)
+    sync_scopes = sync_dir / "scopes"
+    if not sync_scopes.exists():
+        return report
+    for src in sync_scopes.rglob("*"):
+        if not src.is_file():
+            continue
+        if src.name in _SYNC_BLACKLIST_NAMES:
+            continue
+        if not (src.suffix == ".md"
+                or src.name.endswith(".md.enc")
+                or src.name == ".memoryd-sensitive"):
+            continue
+        rel = src.relative_to(sync_scopes)
+        key = str(rel).replace("\\", "/")
+        if scope_hash and not key.startswith(scope_hash + "/"):
+            continue
+        local = data_root / "scopes" / rel
+        if not local.exists():
+            if not dry_run:
+                local.parent.mkdir(parents=True, exist_ok=True)
+                local.write_bytes(src.read_bytes())
+            report.copied += 1
+            continue
+        if _fingerprint(local) == _fingerprint(src):
+            report.skipped += 1
+            continue
+        # conflict
+        if not dry_run:
+            local_fp = _fingerprint(local)[:8]
+            conflicts_dir = data_root / "scopes" / "_conflicts"
+            conflicts_dir.mkdir(parents=True, exist_ok=True)
+            backup = conflicts_dir / f"{rel.name}-{local_fp}"
+            backup.write_bytes(local.read_bytes())
+            local.write_bytes(src.read_bytes())
+        report.conflicts += 1
+    if not dry_run and (report.copied > 0 or report.conflicts > 0):
+        _rebuild_index_quiet(data_root)
+    return report
+
+
+def _rebuild_index_quiet(data_root: Path) -> None:
+    """Best-effort rebuild_index; never raise.
+
+    The actual rebuild lives in the CLI command (cmd_rebuild_index); there is
+    no module-level helper today. We try to import one if it ever appears, but
+    silently degrade to a warning so sync stays robust.
+    """
+    try:
+        from .index import rebuild_index  # type: ignore[attr-defined]
+        rebuild_index(data_root)
+    except Exception as e:
+        log.warning("post-import rebuild_index failed: %s", e)
