@@ -5,7 +5,9 @@
  * without needing the SDK installed in this repo's node_modules.
  */
 
-import { definePluginEntry } from "@openclaw/plugin-sdk";
+// OpenClaw 2026.5.7+ deprecates bare "@openclaw/plugin-sdk" compat import;
+// use focused subpath instead (warning at install time guides this).
+import { definePluginEntry } from "@openclaw/plugin-sdk/plugin-entry";
 import { makeSubscription } from "./register.js";
 
 // NOTE: NO `kind` field. Setting kind:"memory" would put us in the exclusive
