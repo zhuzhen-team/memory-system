@@ -628,6 +628,26 @@ def _cmd_sync_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_set_passphrase(args: argparse.Namespace) -> int:
+    import getpass
+    from . import passphrase
+    p1 = getpass.getpass("Master passphrase: ")
+    p2 = getpass.getpass("Confirm: ")
+    if p1 != p2:
+        print("passphrase mismatch", file=sys.stderr)
+        return 1
+    try:
+        passphrase.set_(p1)
+    except passphrase.PassphraseError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"failed to store passphrase: {e}", file=sys.stderr)
+        return 1
+    print("master passphrase stored locally", file=sys.stderr)
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.config_action == "show":
         import json as _j
@@ -838,6 +858,12 @@ def main() -> int:
     p_sst = sync_subs.add_parser("status", help="show per-scope sync counts")
     p_sst.add_argument("--json", action="store_true", dest="as_json")
     p_sst.set_defaults(func=_cmd_sync_status)
+
+    p_pp = subs.add_parser(
+        "set-passphrase",
+        help="set memoryd master passphrase (Plan 6 sensitive scope cross-device)",
+    )
+    p_pp.set_defaults(func=_cmd_set_passphrase)
 
     args = parser.parse_args()
     return args.func(args)

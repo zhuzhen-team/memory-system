@@ -31,7 +31,44 @@ def _keyring():
 
 
 def get_or_create_scope_key(scope_hash: str) -> bytes:
+    """Return 32-byte AES key for scope_hash.
+
+    Mode is decided by config.toml [sensitive] key_source:
+    - "random" (default, Plan 4): per-scope 32B random key in OS keyring
+    - "passphrase" (Plan 6 opt-in): PBKDF2-HMAC-SHA256 derive from master passphrase
+    """
     _check_backend_available()
+    try:
+        from .config import load_config
+        cfg = load_config()
+        key_source = cfg.sensitive.key_source if hasattr(cfg, "sensitive") else "random"
+        kdf_iters = cfg.sensitive.kdf_iters if hasattr(cfg, "sensitive") else 600000
+    except Exception:
+        key_source = "random"
+        kdf_iters = 600000
+    if key_source == "passphrase":
+        return _get_passphrase_scope_key(scope_hash, kdf_iters)
+    return _get_random_scope_key(scope_hash)
+
+
+def _get_passphrase_scope_key(scope_hash: str, iters: int) -> bytes:
+    from . import passphrase as pp
+    p = pp.get()
+    if not p:
+        raise EncError("master passphrase unset; run `memoryd set-passphrase`")
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=scope_hash.encode("utf-8"),
+        iterations=iters,
+    )
+    return kdf.derive(p)
+
+
+def _get_random_scope_key(scope_hash: str) -> bytes:
+    """Original Plan 4 implementation: random 32B per scope, stored in OS keyring."""
     kr = _keyring()
     existing = kr.get_password(SERVICE, scope_hash)
     if existing:
