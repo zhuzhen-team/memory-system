@@ -2,12 +2,13 @@
 
 Personal memory governance MCP server. Part of `project-management-personal`.
 
-**Status:** v0.6.0 — Multi-device sync (plan 6 of 8)
+**Status:** v0.7.0 — Web dashboard + TUI (plan 7 of 8)
 
 Currently supports:
 - macOS / Linux / Windows
 - **Claude Code, Codex, and OpenClaw three clients share a single scope** (was: Claude Code only)
 - Multi-device sync via raw .md mirror to user-configured sync dir (Plan 6)
+- Local web dashboard + textual digest TUI (Plan 7)
 - Session capture only (decisions/preferences/promotions in plan 3)
 - Plain Markdown storage (encryption in plan 4)
 - ripgrep-based search (semantic search in plan 3)
@@ -465,6 +466,80 @@ v1 解决方案：保持机器间 home dir 布局一致（如 symlink `/Users/<u
 - Audit log / grants / Keychain 密钥不进同步盘（安全边界）
 - passphrase 忘记 → 所有 `.md.enc` 永久无法解（无 recovery）
 - 跨平台路径差异需手动 align（v2 fix）
+
+## Web dashboard + TUI (Plan 7)
+
+memoryd v0.7.0 加本机轻量 Web Dashboard（浏览-only）+ textual digest TUI（approve/reject）。spec §4.3 #11 + §4.8 #30-32。
+
+### 启动 Web Dashboard
+
+```bash
+memoryd web                       # 随机端口；stderr 输出含 token URL
+memoryd web --port=8088           # 显式端口
+memoryd web --no-browser          # 不自动 open（CI / SSH 场景）
+```
+
+启动后 stderr 出一行：
+
+```
+memoryd web on http://127.0.0.1:<port>/?token=<256-bit-token>
+```
+
+把整个 URL（含 ?token=）复制到浏览器；token 不复制无法访问。重启 memoryd web token 变。
+
+### Web 路由
+
+| 路径 | 用途 |
+|---|---|
+| `/` | 主页：搜索框 + 最近 20 条记忆 |
+| `/memories` | list；`?type=` / `?scope=` / `?page=` 过滤 |
+| `/memories/{slug}` | detail；sensitive scope 一律 403 |
+| `/search?q=` | HTMX fragment 全文搜索；不含 sensitive scope |
+| `/audit` | audit log 表格；`?scope=` / `?since=` / `?event_type=` |
+| `/digest` | pending promotions 列表（read-only） |
+| `/healthz` | 公共探活，不需 token |
+
+Web 仅浏览不可编辑（spec §6）；编辑走 CLI / 直接编辑 Markdown。
+
+### 安全模型
+
+- 绑定 `127.0.0.1`（loopback；非 0.0.0.0）
+- 256-bit token 每次启动生成；不持久化
+- middleware 接受 query string `?token=` / cookie `memoryd_token` / `Authorization: Bearer <token>` 三选一
+- 拒绝时返回 401 JSON；无登录页
+- 不支持 HTTPS（本机；v2 视需要加）
+- Sensitive scope：list 显 🔒 占位；detail 直接 403；search 排除其内容
+
+### Digest TUI
+
+```bash
+memoryd digest --tui              # 启动 textual 交互界面
+```
+
+键盘：
+- `a` Approve all pending
+- `r` Reject highlighted
+- `s` Skip
+- `q` Quit
+
+依赖：textual ≥ 0.40；macOS Terminal / iTerm / Windows Terminal 都兼容。老 Windows Console 可能渲染异常——建议升级。
+
+### Basic Memory schema 对齐
+
+Frontmatter 加 3 个新字段（全 optional + default empty，向后兼容）：
+
+- `tags: [str]` — Plan 1 已存；Basic Memory 标签语义
+- `category: str | None` — 顶层归类（如 `decisions/architecture`）
+- `observations: [str]` — 小条目状的事实附加（Basic Memory observations）
+
+`relations` Plan 3 已存，与 Basic Memory 同名复用。这一对齐为 v2 接 Obsidian / Basic Memory 留路（spec §10 #2）。
+
+### Limitations
+
+- Web 仅浏览不可编辑（v2 视使用频率决定加）
+- 不支持 HTTPS / 多用户（spec §6）
+- textual 老 Windows Console 渲染异常（用 Windows Terminal）
+- Sensitive scope detail 永 403（不会因为有 grant 就让 Web 看到内容；用 CLI `memoryd show`）
 
 ## Limitations of v1.0-α
 

@@ -1,0 +1,80 @@
+# Plan 7 Phase 1 用户手册（web dashboard + textual digest TUI）
+
+## 1. 启动 Web Dashboard
+
+cd /Users/abble/project-management-personal/memoryd
+uv run memoryd web --no-browser &
+SERVER_PID=$!
+sleep 1
+
+# 抓 stderr 中的 URL
+# （--no-browser 不 open；stderr 由你 redirect 看）
+# 真实使用：
+# uv run memoryd web                  # 自动 open browser
+
+# 验证 healthz
+curl -s http://127.0.0.1:<port>/healthz
+
+# 浏览器粘贴 URL 后看：
+# - 主页：search box + recent list
+# - /memories：list filter type/scope
+# - /memories/<slug>：detail
+# - /audit：audit.jsonl 表格
+# - /digest：pending promotions
+
+kill $SERVER_PID
+
+## 2. Sensitive scope 在 Web 的行为
+
+# 已 mark-sensitive 过的 scope：
+# - 主页 / list 显 🔒 占位，slug 不可点
+# - detail page 403
+# - search 不返回 sensitive scope 内容
+# 这是 spec §4.5 安全要求；要看敏感记忆走 CLI：
+#   memoryd grant ~/scopes/finance --duration session
+#   memoryd search "关键词"
+
+## 3. Digest TUI
+
+uv run memoryd digest --tui
+# 进 textual UI：
+# - 看到 pending promotions 列表
+# - a 全部 approve
+# - r 拒绝当前
+# - s skip
+# - q 退出
+
+# 退出后 SQLite promotions table status 改成 approved/rejected；
+# 真写 long-term-memory .md 走 memoryd promote-to-long-term 或下一次 digest 流程。
+
+## 4. Basic Memory schema 用法
+
+# 手编一条 .md：
+mkdir -p ~/.local/share/memoryd/scopes/h_test/decisions
+cat > ~/.local/share/memoryd/scopes/h_test/decisions/2026-05-15-test-bm.md <<'EOF'
+---
+title: test bm
+slug: 2026-05-15-test-bm
+scope_hash: h_test
+type: decision
+triggers: [test]
+source: manual
+created_at: 2026-05-15T15:00:00+00:00
+tags: [important]
+category: architecture
+observations:
+- "DB is postgres 15"
+- "we use docker-compose for dev"
+relations:
+- 2026-05-14-related-slug
+---
+
+body content here
+EOF
+
+# 重启 web 后 /memories/2026-05-15-test-bm 详情看 frontmatter + body
+
+## 5. cron 配合 digest --tui
+
+# 周一 09:00 launchd 跑的是 `memoryd digest --notify`，
+# 桌面通知后用户手动跑 `memoryd digest --tui` 交互审核
