@@ -1,0 +1,8 @@
+<ul>
+{% for hit in hits %}
+<li><a href="/memories/{{ hit.slug }}?token={{ token }}">{{ hit.slug }}</a>
+<small>{{ hit.scope_hash }} · {{ hit.excerpt }}</small></li>
+{% else %}
+<li><em>no hits</em></li>
+{% endfor %}
+</ul>
