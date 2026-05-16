@@ -1,0 +1,54 @@
+# Plan 8 Phase 1 用户手册（import + memory-searcher）
+
+## 1. CLAUDE.md import（dry-run + 实跑）
+
+# 假设用户有一个 ~/scopes/wolin/CLAUDE.md，切到该目录：
+cd ~/scopes/wolin
+cd /Users/abble/project-management-personal/memoryd
+
+# dry-run 看 plan
+uv run memoryd import claude-md ~/scopes/wolin/CLAUDE.md --dry-run
+
+# 实跑（scope 自动从 cwd 派生）
+uv run memoryd import claude-md ~/scopes/wolin/CLAUDE.md
+
+# 看导入的 .md
+find ~/.local/share/memoryd/scopes -newer /tmp -name "imported-claude-md-*" | head
+
+## 2. auto-memory import
+
+# 从 CC 自动记忆目录导入；跳过 MEMORY.md 索引
+uv run memoryd import auto-memory ~/.claude/projects/-Users-abble-project-management-personal/memory/
+
+# 验证
+ls ~/.local/share/memoryd/scopes/<scope_hash>/facts/imported-auto-memory-*
+
+## 3. Codex AGENTS.md import
+
+uv run memoryd import agents-md ~/.codex/AGENTS.md
+
+## 4. mcp-memory-service import
+
+# 假设有一个旧 memories.json（兼容裸数组或 {"memories":[...]} wrapper）
+uv run memoryd import mcp-memory-service ~/path/to/memories.json
+
+## 5. memory-searcher sub-agent install
+
+uv run memoryd setup install-memory-searcher
+ls ~/.claude/agents/memory-searcher.md
+cat ~/.claude/agents/memory-searcher.md | head -10
+
+# 重启 CC（让它识别新 sub-agent）
+# 在 CC 里说 "找一下上次关于 logo 的讨论" → 主智能体应自动召唤 memory-searcher
+
+## 6. 项目级安装（不进 ~/.claude/agents/，进项目 .claude/agents/）
+
+cd ~/scopes/wolin
+uv run memoryd setup install-memory-searcher --target=.claude/agents/
+
+## 7. v1 端到端冷启动复盘判据（spec §9）
+
+# 任挑一个 ≥ 2 周没碰的 scope；新开 CC turn 提示该项目相关问题
+# 验证：智能体 < 1 分钟（含 1 次 memory MCP / memory-searcher 调用）拿到工作上下文
+# 验证：CC 写的记忆，cd 同 scope 开 Codex / OpenClaw 也能召回
+# 验证：digest --tui 周一上午能跑通审核流程
