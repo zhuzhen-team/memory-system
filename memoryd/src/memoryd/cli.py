@@ -443,6 +443,255 @@ def cmd_merge(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Plan 9: manual control CLI — search / list / show / delete / promote
+# ---------------------------------------------------------------------------
+
+
+def _iter_scopes(data_root: Path) -> list[str]:
+    """List scope_hash directories under <data_root>/scopes/ (skip _* internals)."""
+    scopes_dir = data_root / "scopes"
+    if not scopes_dir.exists():
+        return []
+    return [
+        d.name for d in scopes_dir.iterdir()
+        if d.is_dir() and not d.name.startswith("_")
+    ]
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    """Full-text search across memories; aggregates across scopes by default."""
+    from .search import search_sessions
+    data_root = _data_root()
+    target_scopes = [args.scope] if args.scope else _iter_scopes(data_root)
+    hits: list[dict[str, Any]] = []
+    for sh in target_scopes:
+        try:
+            scope_hits = search_sessions(
+                data_root, sh, args.query,
+                type_=args.type_, limit=args.limit,
+            )
+        except Exception:
+            # SQLite missing / migration error → skip this scope
+            continue
+        for h in scope_hits:
+            hits.append({
+                "slug": h.slug,
+                "title": h.title,
+                "scope_hash": sh,
+                "excerpt": h.excerpt,
+                "path": str(h.path),
+            })
+    # Apply final limit across aggregated hits
+    hits = hits[: args.limit]
+    if args.as_json:
+        print(json.dumps(hits, indent=2, ensure_ascii=False, default=str))
+    else:
+        if not hits:
+            print("no hits", file=sys.stderr)
+            return 0
+        for h in hits:
+            slug = h.get("slug", "?")
+            scope = h.get("scope_hash", "?")
+            excerpt = h.get("excerpt", "") or ""
+            print(f"{slug:40} {scope:14} {excerpt[:80]}")
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """List memories filtered by type / scope."""
+    data_root = _data_root()
+    rows = _list_memories(
+        data_root,
+        type_=args.type_,
+        scope_hash=args.scope,
+        limit=args.limit,
+    )
+    if args.as_json:
+        print(json.dumps(rows, indent=2, ensure_ascii=False, default=str))
+    else:
+        if not rows:
+            print("no memories", file=sys.stderr)
+            return 0
+        for r in rows:
+            print(
+                f"{r.get('slug',''):40} "
+                f"[{r.get('type',''):10}] "
+                f"{r.get('scope_hash',''):14} "
+                f"{r.get('created_at','') or ''}"
+            )
+    return 0
+
+
+def _list_memories(
+    data_root: Path,
+    *,
+    type_: str | None = None,
+    scope_hash: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Query SQLite memories table; fallback to filesystem scan if table missing."""
+    import sqlite3
+    db = data_root / "index.db"
+    if not db.exists():
+        return _scan_filesystem_memories(data_root, type_, scope_hash, limit)
+    try:
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        q = (
+            "SELECT slug, type, scope_hash, ttl_days, last_recalled_at, "
+            "recall_count, body_path, created_at "
+            "FROM memories WHERE 1=1"
+        )
+        params: list[Any] = []
+        if type_:
+            q += " AND type = ?"
+            params.append(type_)
+        if scope_hash:
+            q += " AND scope_hash = ?"
+            params.append(scope_hash)
+        q += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(q, params).fetchall()
+    except sqlite3.OperationalError:
+        # memories table missing or column mismatch → fallback
+        conn.close()
+        return _scan_filesystem_memories(data_root, type_, scope_hash, limit)
+    else:
+        conn.close()
+    out = [dict(r) for r in rows]
+    if not out:
+        # SQLite present but empty → still try filesystem (e.g. tests writing raw .md)
+        return _scan_filesystem_memories(data_root, type_, scope_hash, limit)
+    return out
+
+
+def _scan_filesystem_memories(
+    data_root: Path,
+    type_: str | None,
+    scope_hash: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Fallback: walk scopes/<hash>/<type_dir>/*.md when SQLite missing/empty."""
+    type_dir_map = {
+        "sessions": "session",
+        "decisions": "decision",
+        "preferences": "preference",
+        "facts": "fact",
+        "playbooks": "playbook",
+        "warnings": "warning",
+    }
+    out: list[dict[str, Any]] = []
+    scopes = data_root / "scopes"
+    if not scopes.exists():
+        return out
+    for sh_dir in scopes.iterdir():
+        if not sh_dir.is_dir() or sh_dir.name.startswith("_"):
+            continue
+        sh = sh_dir.name
+        if scope_hash and sh != scope_hash:
+            continue
+        for type_dir in sh_dir.iterdir():
+            if not type_dir.is_dir():
+                continue
+            t = type_dir_map.get(type_dir.name)
+            if t is None:
+                continue
+            if type_ and t != type_:
+                continue
+            for md in type_dir.glob("*.md"):
+                out.append({
+                    "slug": md.stem,
+                    "type": t,
+                    "scope_hash": sh,
+                    "body_path": str(md.relative_to(data_root)),
+                    "created_at": None,
+                })
+            for enc_path in type_dir.glob("*.md.enc"):
+                out.append({
+                    "slug": enc_path.name[:-len(".md.enc")],
+                    "type": t,
+                    "scope_hash": sh,
+                    "body_path": str(enc_path.relative_to(data_root)),
+                    "created_at": None,
+                })
+    out.sort(key=lambda r: r["slug"], reverse=True)
+    return out[:limit]
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    """Display a single memory (frontmatter + body)."""
+    data_root = _data_root()
+    path = _resolve_slug(data_root, args.slug, scope_hash=args.scope)
+    if path is None:
+        print(f"slug not found: {args.slug}", file=sys.stderr)
+        return 1
+    # Derive scope_hash from path for gate check
+    try:
+        sh = path.relative_to(data_root / "scopes").parts[0]
+    except (IndexError, ValueError):
+        sh = None
+    if sh is not None:
+        from .governance import gate
+        try:
+            gate.check_or_raise(sh, "memoryd show", memory_root=data_root)
+        except gate.AuthorizationRequired as e:
+            print(f"AUTHORIZATION_REQUIRED: {e}", file=sys.stderr)
+            print(
+                "Run `memoryd grant <scope_path> --duration session` first.",
+                file=sys.stderr,
+            )
+            return 1
+    if path.name.endswith(".md.enc"):
+        if sh is None:
+            print(f"cannot derive scope_hash for encrypted file {path}",
+                  file=sys.stderr)
+            return 1
+        text = _enc.decrypt_bytes(sh, path.read_bytes()).decode("utf-8")
+    else:
+        text = path.read_text(encoding="utf-8")
+    print(text)
+    return 0
+
+
+def _resolve_slug(
+    data_root: Path,
+    slug: str,
+    *,
+    scope_hash: str | None = None,
+) -> Path | None:
+    """Find the .md / .md.enc path for *slug*.
+
+    If *scope_hash* given, only search that scope. Otherwise iterate non-internal
+    scopes. Prefers plain `.md` over `.md.enc` when both exist.
+    """
+    scopes = data_root / "scopes"
+    if not scopes.exists():
+        return None
+    if scope_hash:
+        roots = [scopes / scope_hash]
+    else:
+        roots = [
+            d for d in scopes.iterdir()
+            if d.is_dir() and not d.name.startswith("_")
+        ]
+    candidates: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for p in root.rglob(f"{slug}.md"):
+            candidates.append(p)
+        for p in root.rglob(f"{slug}.md.enc"):
+            candidates.append(p)
+    if not candidates:
+        return None
+    # Prefer plain .md over .md.enc
+    for c in candidates:
+        if c.suffix == ".md":
+            return c
+    return candidates[0]
+
+
 def cmd_digest(args: argparse.Namespace) -> int:
     if getattr(args, "tui", False):
         from .tui.digest import run_tui
@@ -923,6 +1172,38 @@ def main() -> int:
     p_merge.add_argument("--keep", required=True)
     p_merge.add_argument("--drop", nargs="+", required=True)
     p_merge.set_defaults(func=cmd_merge)
+
+    # Plan 9: search / list / show subcommands
+    p_search = subs.add_parser(
+        "search",
+        help="full-text search across memories (mirrors search_memory MCP tool)",
+    )
+    p_search.add_argument("query")
+    p_search.add_argument("--scope", default=None,
+                          help="filter by scope_hash")
+    p_search.add_argument("--type", default=None, dest="type_",
+                          help="filter by memory type")
+    p_search.add_argument("--limit", type=int, default=20)
+    p_search.add_argument("--json", action="store_true", dest="as_json")
+    p_search.set_defaults(func=cmd_search)
+
+    p_list = subs.add_parser(
+        "list",
+        help="list memories filtered by type / scope",
+    )
+    p_list.add_argument("--type", default=None, dest="type_")
+    p_list.add_argument("--scope", default=None)
+    p_list.add_argument("--limit", type=int, default=50)
+    p_list.add_argument("--json", action="store_true", dest="as_json")
+    p_list.set_defaults(func=cmd_list)
+
+    p_show = subs.add_parser(
+        "show",
+        help="display a single memory (frontmatter + body)",
+    )
+    p_show.add_argument("slug")
+    p_show.add_argument("--scope", default=None)
+    p_show.set_defaults(func=cmd_show)
 
     p_digest = subs.add_parser("digest", help="show weekly digest (promotions / duplicates / decayed)")
     p_digest.add_argument("--json", action="store_true")
