@@ -409,6 +409,21 @@ def _cmd_auto_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_install_memory_searcher(args: argparse.Namespace) -> int:
+    try:
+        out = setup_mod.install_memory_searcher(
+            target_dir=args.target, force=args.force
+        )
+    except FileExistsError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except FileNotFoundError as e:
+        print(f"install-memory-searcher: {e}", file=sys.stderr)
+        return 1
+    print(f"installed memory-searcher: {out}", file=sys.stderr)
+    return 0
+
+
 def cmd_decay_sweep(args: argparse.Namespace) -> int:
     from .governance.decay import sweep_decay
     counts = sweep_decay(_data_root())
@@ -886,6 +901,20 @@ def main() -> int:
         help="detect platform and install cron + cc-hook in one shot",
     )
     p_auto.set_defaults(func=_cmd_auto_install)
+
+    # install-memory-searcher
+    p_ims = setup_subs.add_parser(
+        "install-memory-searcher",
+        help="copy memory-searcher.md template to ~/.claude/agents/",
+    )
+    p_ims.add_argument(
+        "--target",
+        type=Path,
+        default=None,
+        help="target directory; default ~/.claude/agents/",
+    )
+    p_ims.add_argument("--force", action="store_true")
+    p_ims.set_defaults(func=_cmd_install_memory_searcher)
 
     p_decay = subs.add_parser("decay-sweep", help="step memories through alive→dim→soft-forgotten state machine")
     p_decay.set_defaults(func=cmd_decay_sweep)

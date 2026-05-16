@@ -225,6 +225,25 @@ def install_cc_hook(target_settings: Path | None = None) -> Path:
     return settings
 
 
+def install_memory_searcher(
+    target_dir: Path | None = None,
+    *,
+    force: bool = False,
+) -> Path:
+    """Copy memory-searcher.md template to ~/.claude/agents/ (or --target)."""
+    src = Path(__file__).parent / "templates" / "memory-searcher.md"
+    if not src.exists():
+        raise FileNotFoundError(f"template missing: {src}")
+    if target_dir is None:
+        target_dir = Path.home() / ".claude" / "agents"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dst = target_dir / "memory-searcher.md"
+    if dst.exists() and not force:
+        raise FileExistsError(f"{dst} exists; use --force to overwrite")
+    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return dst
+
+
 def auto_install() -> dict:
     """Detect platform, install cron jobs + cc-hook; return per-step results.
 
