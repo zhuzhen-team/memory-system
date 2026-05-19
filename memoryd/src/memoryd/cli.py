@@ -237,6 +237,41 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_inject(args: argparse.Namespace) -> int:
+    """Print a SessionStart context block to stdout.
+
+    Output is meant to be piped into a CC SessionStart hook (which feeds
+    stdout into ``additionalContext``). Always exits 0 — even on failure
+    we emit the graceful fallback line from :mod:`memoryd.inject`.
+    """
+    from .inject import render_session_context
+
+    scope = args.scope
+    # `--scope=auto` is shorthand for "infer from CLAUDE_PROJECT_DIR / cwd"
+    # so SessionStart hooks don't have to plumb scope_hash themselves.
+    if scope == "auto":
+        cwd = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        try:
+            scope = scope_hash(resolve_scope_root(Path(cwd)))
+        except Exception:
+            scope = None
+    elif scope in ("", "global", "_global"):
+        scope = None
+
+    text = render_session_context(
+        scope=scope,
+        identity_max_chars=args.max_chars,
+        top_entities_window_days=args.window_days,
+        top_entities_limit=args.top_entities,
+        recent_memories_limit=args.recent,
+        recent_memory_types=args.types,
+        include_trends=args.include_trends,
+    )
+    # stdout (no stderr prefix) — CC pipes our stdout into additionalContext.
+    print(text)
+    return 0
+
+
 def _build_router_for_args(args: argparse.Namespace, memory_root: Path) -> MirrorRouter:
     router = MirrorRouter()
     if args.codex:
@@ -423,6 +458,18 @@ def _cmd_uninstall_cron(args: argparse.Namespace) -> int:
 def _cmd_install_cc_hook(args: argparse.Namespace) -> int:
     out = setup_mod.install_cc_hook()
     print(f"wired CC SessionEnd hook in {out}", file=sys.stderr)
+    if getattr(args, "include_session_start", False):
+        try:
+            ss = setup_mod.install_cc_session_start_hook()
+            print(f"wired CC SessionStart hook in {ss}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 — install is best-effort
+            print(f"warn: SessionStart install failed: {exc}", file=sys.stderr)
+    return 0
+
+
+def _cmd_install_cc_session_start_hook(args: argparse.Namespace) -> int:
+    out = setup_mod.install_cc_session_start_hook()
+    print(f"wired CC SessionStart hook in {out}", file=sys.stderr)
     return 0
 
 
@@ -1615,6 +1662,59 @@ def main() -> int:
     p_az.add_argument("session_slug")
     p_az.set_defaults(func=cmd_analyze_session)
 
+    # `inject` — SessionStart hook back-end. Renders a small markdown block
+    # (identity excerpt + top entities + recent long-term) for CC to feed
+    # into additionalContext at the start of a new session.
+    p_inject = subs.add_parser(
+        "inject",
+        help="render SessionStart context (identity + top entities + recent long-term)",
+    )
+    p_inject.add_argument(
+        "--scope",
+        default="auto",
+        help="scope_hash, 'auto' (infer from CLAUDE_PROJECT_DIR/cwd), or 'global' for cross-scope",
+    )
+    p_inject.add_argument(
+        "--max-chars",
+        type=int,
+        default=500,
+        dest="max_chars",
+        help="hard cap on identity.md excerpt (paragraph-aware truncation)",
+    )
+    p_inject.add_argument(
+        "--top-entities",
+        type=int,
+        default=8,
+        dest="top_entities",
+        help="max number of top entities to list (default 8)",
+    )
+    p_inject.add_argument(
+        "--window-days",
+        type=int,
+        default=30,
+        dest="window_days",
+        help="entity activity window in days (default 30)",
+    )
+    p_inject.add_argument(
+        "--recent",
+        type=int,
+        default=5,
+        help="max number of recent long-term memories to list",
+    )
+    p_inject.add_argument(
+        "--types",
+        nargs="+",
+        default=None,
+        help="memory types for the 'recent' list (default: decision preference fact)",
+    )
+    p_inject.add_argument(
+        "--include-trends",
+        action="store_true",
+        dest="include_trends",
+        help="append a 'recent triggers' single-line block",
+    )
+    p_inject.set_defaults(func=cmd_inject)
+
     p_mirror = subs.add_parser(
         "mirror",
         help="watch Codex / OpenClaw session log dirs and mirror new files into memoryd",
@@ -1732,7 +1832,20 @@ def main() -> int:
         "install-cc-hook",
         help="wire CC SessionEnd hook (cross-platform Python wrapper)",
     )
+    p_inst_cc.add_argument(
+        "--include-session-start",
+        action="store_true",
+        dest="include_session_start",
+        help="also install the SessionStart hook (recommended for full identity injection)",
+    )
     p_inst_cc.set_defaults(func=_cmd_install_cc_hook)
+
+    # install-cc-session-start-hook
+    p_inst_cc_ss = setup_subs.add_parser(
+        "install-cc-session-start-hook",
+        help="wire CC SessionStart hook (injects identity / top entities / recent long-term)",
+    )
+    p_inst_cc_ss.set_defaults(func=_cmd_install_cc_session_start_hook)
 
     # auto-install
     p_auto = setup_subs.add_parser(

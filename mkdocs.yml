@@ -83,9 +83,21 @@ nav:
   - 首页: index.md
   - 入门:
     - 项目概览: getting-started/overview.md
-    - 安装: getting-started/installation.md
+    - 5 分钟快速开始: getting-started/quickstart.md
+    - 详细安装: getting-started/installation.md
     - 首次运行: getting-started/first-run.md
     - 核心概念: getting-started/concepts.md
+  - 教程:
+    - 学习路径: tutorials/index.md
+    - 01 第一次记忆: tutorials/first-memory.md
+    - 02 自动捕获: tutorials/auto-capture.md
+    - 03 搜索与召回: tutorials/search-and-recall.md
+    - 04 知识图谱: tutorials/knowledge-graph.md
+    - 05 画像自学习: tutorials/profile-self-learning.md
+    - 06 跨设备同步: tutorials/cross-device-sync.md
+    - 07 敏感记忆: tutorials/sensitive-memories.md
+    - 08 故障诊断流: tutorials/troubleshooting-flow.md
+  - FAQ: faq.md
   - 架构:
     - 全景: architecture/overview.md
     - 存储层: architecture/storage.md

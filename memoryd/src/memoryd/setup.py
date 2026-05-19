@@ -225,6 +225,61 @@ def install_cc_hook(target_settings: Path | None = None) -> Path:
     return settings
 
 
+def install_cc_session_start_hook(target_settings: Path | None = None) -> Path:
+    """Wire ``plugins/claude-code/session-start`` into ``~/.claude/settings.json``.
+
+    Symmetric with :func:`install_cc_hook`, but registers under the
+    ``SessionStart`` event instead of ``SessionEnd``. SessionStart
+    hooks emit ``additionalContext`` for the new session via stdout, so
+    the script must be a fast, non-blocking command.
+
+    Detect platform via :func:`memoryd.platforms.detect`:
+    - Windows → ``session-start.ps1`` + powershell command
+    - macOS / Linux → ``session-start.py`` + python3 command
+
+    Backs up the settings file (when it exists) into ``~/.claude/backups/``,
+    then replaces any prior ``matcher='*'`` SessionStart entry whose
+    command contains ``cc-session-start-hook`` or our script name with
+    the new one (idempotent re-install).
+    """
+    from .platforms import detect
+
+    settings = target_settings or (Path.home() / ".claude" / "settings.json")
+    if settings.exists():
+        backup_file(settings, backup_dir=Path.home() / ".claude" / "backups")
+    repo_root = Path(__file__).resolve().parents[3]
+    plat = detect()
+    if plat == "windows":
+        hook_path = repo_root / "plugins" / "claude-code" / "session-start.ps1"
+        cmd = f'powershell -NoProfile -ExecutionPolicy Bypass -File "{hook_path}"'
+    else:
+        hook_path = repo_root / "plugins" / "claude-code" / "session-start.py"
+        cmd = f'python3 "{hook_path}"'
+    data = json.loads(settings.read_text("utf-8")) if settings.exists() else {}
+    hooks = data.setdefault("hooks", {})
+    session_start = hooks.setdefault("SessionStart", [])
+    session_start[:] = [
+        m for m in session_start
+        if not (
+            m.get("matcher") == "*"
+            and any(
+                ("cc-session-start-hook" in (h.get("command") or ""))
+                or ("session-start.py" in (h.get("command") or ""))
+                or ("session-start.ps1" in (h.get("command") or ""))
+                or ("session-start.sh" in (h.get("command") or ""))
+                for h in m.get("hooks", [])
+            )
+        )
+    ]
+    session_start.append({
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": cmd}],
+    })
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+    return settings
+
+
 def install_memory_searcher(
     target_dir: Path | None = None,
     *,
@@ -275,4 +330,8 @@ def auto_install() -> dict:
         results["cc_hook"] = str(install_cc_hook())
     except Exception as e:  # noqa: BLE001
         results["cc_hook_error"] = str(e)
+    try:
+        results["cc_session_start_hook"] = str(install_cc_session_start_hook())
+    except Exception as e:  # noqa: BLE001
+        results["cc_session_start_hook_error"] = str(e)
     return results

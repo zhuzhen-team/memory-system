@@ -65,6 +65,9 @@ memoryd-mcp = "memoryd.mcp_server:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end tests that shell out to the real memoryd CLI (run with `pytest -m e2e`)",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -105,7 +105,7 @@ memoryd web on http://127.0.0.1:8765/?token=<256-bit-token>
 
 ```bash
 tail ~/.local/share/memoryd/logs/cc-session-end.log
-memoryd list --recent=5
+memoryd list --limit=5
 ```
 
 应该能看到一条 `source=claude-code` 的新 session。

@@ -78,8 +78,8 @@ tail -f ~/.local/share/memoryd/logs/openclaw-events.log
 
 # 4. FS-watch 兜底
 memoryd mirror --openclaw --once
-memoryd list --source=openclaw --recent=5       # SDK
-memoryd list --source=openclaw-fs --recent=5    # FS-watch
+memoryd list --limit=20 | grep openclaw          # SDK 与 FS-watch 都看
+# 想看具体哪条来自哪个 source，打开 .md 文件 frontmatter
 ```
 
 ## MCP 工具不出现
