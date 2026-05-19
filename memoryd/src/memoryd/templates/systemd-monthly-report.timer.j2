@@ -1,0 +1,9 @@
+[Unit]
+Description=memoryd monthly profile change report timer
+
+[Timer]
+OnCalendar=*-*-01 {{ "%02d:%02d:00" | format(hour, minute) }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

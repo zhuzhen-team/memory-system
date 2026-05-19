@@ -47,12 +47,11 @@ observations:
 relations:
   - mentions:entity:library:React
 
-# 敏感
-encrypted: false                          # true 时文件实际落在 .md.enc
 ---
-
-正文 Markdown ...
 ```
+
+!!! note "加密状态不在 frontmatter"
+    `encrypted` **不是** markdown frontmatter 字段。是否加密通过**文件路径**判断：明文文件叫 `*.md`，加密文件叫 `*.md.enc`（AES-256-GCM）。SQLite 索引在 `memories.scope_sensitive` 列里记录 per-memory 标记，`sensitive_scopes` 表里记录 per-scope 标记。`encrypted: true/false` 只在 [memories.json 跨设备格式](memories-json.md) 里出现，那是同步用的 schema。
 
 ### 字段含义速查
 

@@ -175,7 +175,7 @@ memoryd revoke ~/scopes/finance --task my-deep-work
 
 - 同机：永不断链（违反就报错）
 - 跨机：通过 `sync export --include-audit-chain` 把链放进 memories.json，import 端验证签名 + 按 ts 顺序合并
-- 篡改检测：`memoryd audit verify` 重算所有 hash 与 stored hash 比对
+- 篡改检测：`memoryd audit --verify` 重算所有 hash 与 stored hash 比对
 
 ## 跨平台 scope_hash caveat
 
@@ -194,7 +194,7 @@ v2 计划从 git remote 派生 scope_hash，自动跨平台对齐。
 
 - **passphrase 忘记** → 所有 `.md.enc` 永久无法解（无 recovery）
 - **同步盘损坏 / 部分文件** → import 时 `_conflicts/` 兜底，不会破坏本地
-- **audit chain 断裂** → `memoryd audit verify` 报错，先排查是否手动改了 audit.jsonl
+- **audit chain 断裂** → `memoryd audit --verify` 报错，先排查是否手动改了 audit.jsonl
 
 ## 设计权衡
 

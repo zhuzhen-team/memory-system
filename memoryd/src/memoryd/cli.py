@@ -368,12 +368,25 @@ def _cmd_uninstall_launchd(args: argparse.Namespace) -> int:
 
 def _cmd_install_cron(args: argparse.Namespace) -> int:
     keys: list[str] = []
+    # --task is the canonical knob; the old per-job flags stay as shortcuts.
+    if getattr(args, "task", None):
+        keys.append(args.task)
     if args.all or args.decay:
         keys.append("decay")
     if args.all or args.digest:
         keys.append("digest")
+    if args.all or getattr(args, "weekly_identity", False):
+        keys.append("weekly_identity")
+    if args.all or getattr(args, "monthly_report", False):
+        keys.append("monthly_report")
+    # dedupe preserving order
+    keys = list(dict.fromkeys(keys))
     if not keys:
-        print("install-cron: pass --decay, --digest, or --all", file=sys.stderr)
+        print(
+            "install-cron: pass --decay / --digest / --weekly-identity / "
+            "--monthly-report / --task=<name> / --all",
+            file=sys.stderr,
+        )
         return 2
     for k in keys:
         out = setup_mod.install_cron(k)
@@ -383,12 +396,23 @@ def _cmd_install_cron(args: argparse.Namespace) -> int:
 
 def _cmd_uninstall_cron(args: argparse.Namespace) -> int:
     keys: list[str] = []
+    if getattr(args, "task", None):
+        keys.append(args.task)
     if args.all or args.decay:
         keys.append("decay")
     if args.all or args.digest:
         keys.append("digest")
+    if args.all or getattr(args, "weekly_identity", False):
+        keys.append("weekly_identity")
+    if args.all or getattr(args, "monthly_report", False):
+        keys.append("monthly_report")
+    keys = list(dict.fromkeys(keys))
     if not keys:
-        print("uninstall-cron: pass --decay, --digest, or --all", file=sys.stderr)
+        print(
+            "uninstall-cron: pass --decay / --digest / --weekly-identity / "
+            "--monthly-report / --task=<name> / --all",
+            file=sys.stderr,
+        )
         return 2
     for k in keys:
         setup_mod.uninstall_cron(k)
@@ -930,7 +954,34 @@ def cmd_revoke(args: argparse.Namespace) -> int:
 
 def cmd_audit(args: argparse.Namespace) -> int:
     from datetime import datetime
-    from .governance.audit import query_events
+    from .governance.audit import audit_log_path, query_events, verify_chain
+
+    # --verify: walk the audit chain and report tampering instead of dumping
+    # events. Exit code 0 = chain intact, 1 = broken.
+    if getattr(args, "verify", False):
+        valid, broken_at = verify_chain()
+        path = audit_log_path()
+        if getattr(args, "json", False):
+            import json as _j
+            print(_j.dumps(
+                {
+                    "valid": valid,
+                    "first_broken_line": broken_at,
+                    "audit_log_path": str(path),
+                },
+                indent=2,
+                ensure_ascii=False,
+            ))
+        else:
+            if valid:
+                print(f"audit verify: OK  ({path})", file=sys.stderr)
+            else:
+                print(
+                    f"audit verify: BROKEN at line {broken_at}  ({path})",
+                    file=sys.stderr,
+                )
+        return 0 if valid else 1
+
     since = None
     if args.since:
         since = datetime.fromisoformat(args.since)
@@ -1119,6 +1170,435 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Plan 10: knowledge_graph + profile self-learning subcommands
+# ---------------------------------------------------------------------------
+
+
+def _open_kg_store():
+    """Open the shared index DB and wrap it in a KnowledgeGraphStore.
+
+    Imports are local so users who didn't install networkx etc. (or who never
+    touch `memoryd kg`) don't pay the import cost just to run `memoryd list`.
+    """
+    from .index import open_index
+    from .knowledge_graph import KnowledgeGraphStore
+
+    idx = open_index(_data_root() / "index.db")
+    return idx, KnowledgeGraphStore(idx.conn)
+
+
+def _open_profile_store():
+    """Open the shared index DB and wrap it in a ProfileStore."""
+    from .index import open_index
+    from .profile import ProfileStore
+
+    idx = open_index(_data_root() / "index.db")
+    return idx, ProfileStore(idx.conn)
+
+
+def _resolve_entity_id(store, name_or_id: str) -> str | None:
+    """Treat the CLI arg as an entity id if it looks like one, else search by name."""
+    if name_or_id.startswith("entity:"):
+        return name_or_id
+    matches = store.find_entities_by_name(name_or_id, fuzzy=True)
+    if not matches:
+        return None
+    return matches[0].id
+
+
+def _cmd_kg_entities(args: argparse.Namespace) -> int:
+    idx, store = _open_kg_store()
+    try:
+        if args.type_:
+            # `top_entities` doesn't take a type filter, so for --type queries
+            # we use list_entities + cap.
+            ents = store.list_entities(type=args.type_, scope_hash=args.scope)
+            ents = ents[: args.top]
+        else:
+            ents = store.top_entities(
+                scope_hash=args.scope,
+                window_days=args.window_days,
+                top_k=args.top,
+            )
+    finally:
+        idx.close()
+
+    if args.as_json:
+        rows = [
+            {
+                "id": e.id,
+                "name": e.name,
+                "type": e.type,
+                "mention_count": e.mention_count,
+                "decay_state": e.decay_state,
+                "scope_hash": e.scope_hash,
+                "last_seen_at": e.last_seen_at.isoformat() if e.last_seen_at else None,
+            }
+            for e in ents
+        ]
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        return 0
+
+    if not ents:
+        print("no entities", file=sys.stderr)
+        return 0
+    print(f"{'name':<32} {'type':<14} {'×count':<8} {'state':<8} {'scope':<14}")
+    print("-" * 78)
+    for e in ents:
+        print(
+            f"{e.name[:32]:<32} "
+            f"{e.type[:14]:<14} "
+            f"{e.mention_count:<8} "
+            f"{e.decay_state[:8]:<8} "
+            f"{(e.scope_hash or '')[:14]:<14}"
+        )
+    return 0
+
+
+def _cmd_kg_memories_about(args: argparse.Namespace) -> int:
+    from .knowledge_graph import memories_about_entity
+
+    idx, store = _open_kg_store()
+    try:
+        eid = _resolve_entity_id(store, args.entity)
+        if eid is None:
+            print(f"entity not found: {args.entity}", file=sys.stderr)
+            return 1
+        types = None
+        if args.types:
+            types = [t.strip() for t in args.types.split(",") if t.strip()]
+        slugs = memories_about_entity(store, eid, types=types)
+    finally:
+        idx.close()
+
+    if args.as_json:
+        print(json.dumps({"entity_id": eid, "slugs": slugs}, indent=2, ensure_ascii=False))
+        return 0
+    if not slugs:
+        print(f"no memories mention {eid}", file=sys.stderr)
+        return 0
+    print(f"entity: {eid}")
+    for s in slugs:
+        print(f"  {s}")
+    return 0
+
+
+def _cmd_kg_evolution(args: argparse.Namespace) -> int:
+    from .knowledge_graph import evolution_chain
+
+    idx, store = _open_kg_store()
+    try:
+        eid = _resolve_entity_id(store, args.entity)
+        if eid is None:
+            print(f"entity not found: {args.entity}", file=sys.stderr)
+            return 1
+        chain = evolution_chain(store, eid)
+    finally:
+        idx.close()
+
+    if args.as_json:
+        print(json.dumps({"entity_id": eid, "chain": chain}, indent=2, ensure_ascii=False))
+        return 0
+    if not chain:
+        print(f"no supersede chain for {eid}", file=sys.stderr)
+        return 0
+    print(f"evolution chain for {eid} (old → new):")
+    for i, mem_id in enumerate(chain):
+        print(f"  {i+1}. {mem_id}")
+    return 0
+
+
+def _cmd_kg_subgraph(args: argparse.Namespace) -> int:
+    from .knowledge_graph import n_hop_subgraph, to_cytoscape_elements
+
+    idx, store = _open_kg_store()
+    try:
+        eid = _resolve_entity_id(store, args.entity)
+        if eid is None:
+            print(f"entity not found: {args.entity}", file=sys.stderr)
+            return 1
+        g = n_hop_subgraph(store, eid, depth=args.depth)
+        if args.format == "cytoscape":
+            payload = to_cytoscape_elements(g)
+        else:
+            payload = {
+                "entity_id": eid,
+                "depth": args.depth,
+                "nodes": [
+                    {"id": n, **dict(a)} for n, a in g.nodes(data=True)
+                ],
+                "edges": [
+                    {"source": s, "target": t, **dict(a)}
+                    for s, t, a in g.edges(data=True)
+                ],
+            }
+    finally:
+        idx.close()
+
+    blob = json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(blob, encoding="utf-8")
+        print(f"wrote subgraph → {out}", file=sys.stderr)
+    else:
+        print(blob)
+    return 0
+
+
+def _cmd_kg_conflicts(args: argparse.Namespace) -> int:
+    from .knowledge_graph import find_conflicts
+
+    idx, store = _open_kg_store()
+    try:
+        pairs = find_conflicts(store, scope_hash=args.scope)
+    finally:
+        idx.close()
+
+    if args.as_json:
+        print(json.dumps(
+            [{"mem_a": a, "mem_b": b} for a, b in pairs],
+            indent=2,
+            ensure_ascii=False,
+        ))
+        return 0
+    if not pairs:
+        print("no conflict candidates", file=sys.stderr)
+        return 0
+    print(f"{'memory A':<40} {'memory B':<40}")
+    print("-" * 82)
+    for a, b in pairs:
+        print(f"{a[:40]:<40} {b[:40]:<40}")
+    return 0
+
+
+def _cmd_profile_show(args: argparse.Namespace) -> int:
+    from .profile import read_current_identity
+
+    text = read_current_identity(max_chars=args.max_chars)
+    if not text:
+        print("(尚无 identity.md — 跑 `memoryd profile rewrite` 生成首版)", file=sys.stderr)
+        return 0
+    print(text)
+    return 0
+
+
+def _cmd_profile_history(args: argparse.Namespace) -> int:
+    idx, store = _open_profile_store()
+    try:
+        versions = store.list_versions(limit=args.limit)
+    finally:
+        idx.close()
+    # list_versions returns ascending; flip to newest-first for human readers.
+    versions = list(reversed(versions))
+    if args.as_json:
+        rows = [
+            {
+                "version_num": v.version_num,
+                "written_at": v.written_at.isoformat(),
+                "trigger": v.trigger,
+                "change_summary": v.change_summary,
+                "sources_count": v.sources_count,
+            }
+            for v in versions
+        ]
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        return 0
+    if not versions:
+        print("no profile versions yet", file=sys.stderr)
+        return 0
+    print(f"{'v#':<6} {'written_at':<32} {'trigger':<14} summary")
+    print("-" * 90)
+    for v in versions:
+        summary = (v.change_summary or "")[:60]
+        print(f"{v.version_num:<6} {v.written_at.isoformat()[:32]:<32} {v.trigger[:14]:<14} {summary}")
+    return 0
+
+
+def _cmd_profile_diff(args: argparse.Namespace) -> int:
+    import difflib
+
+    idx, store = _open_profile_store()
+    try:
+        versions = {v.version_num: v for v in store.list_versions()}
+    finally:
+        idx.close()
+    if args.from_ not in versions:
+        print(f"version {args.from_} not found", file=sys.stderr)
+        return 1
+    if args.to not in versions:
+        print(f"version {args.to} not found", file=sys.stderr)
+        return 1
+    a = versions[args.from_].content_md
+    b = versions[args.to].content_md
+    diff = "".join(
+        difflib.unified_diff(
+            a.splitlines(keepends=True),
+            b.splitlines(keepends=True),
+            fromfile=f"identity.v{args.from_}.md",
+            tofile=f"identity.v{args.to}.md",
+            n=3,
+        )
+    )
+    if not diff:
+        print(f"(v{args.from_} and v{args.to} have identical content)", file=sys.stderr)
+        return 0
+    print(diff, end="")
+    return 0
+
+
+def _cmd_profile_rewrite(args: argparse.Namespace) -> int:
+    import asyncio
+
+    from .profile import rewrite_identity_weekly
+
+    idx, store = _open_profile_store()
+    try:
+        # Lazy LLM import: only resolve a provider when we actually need it.
+        try:
+            from .llm import get_provider, LLMUnavailable
+            llm = get_provider()
+        except LLMUnavailable as e:
+            print(
+                f"profile rewrite: {e}\n"
+                "set ANTHROPIC_API_KEY (or configure another provider) "
+                "via ~/.config/memoryd/config.toml.",
+                file=sys.stderr,
+            )
+            return 1
+        result = asyncio.run(
+            rewrite_identity_weekly(
+                idx.conn,
+                store,
+                llm=llm,
+                sources_window_days=args.window_days,
+                max_words=args.max_words,
+                dry_run=args.dry_run,
+                trigger="manual" if not args.dry_run else "manual_dry_run",
+            )
+        )
+    finally:
+        idx.close()
+
+    if args.dry_run:
+        # rewrite_identity_weekly returns a dict in dry_run mode.
+        print("--- dry-run preview ---", file=sys.stderr)
+        print(result.get("content_md", ""))
+        summary = result.get("summary")
+        if summary:
+            print(f"\n[change_summary] {summary}", file=sys.stderr)
+        return 0
+
+    # Persisted ProfileVersion object.
+    print(
+        f"profile rewrite: v{result.version_num} written "
+        f"(summary: {result.change_summary or 'n/a'})",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_profile_report(args: argparse.Namespace) -> int:
+    import asyncio
+    from datetime import datetime
+
+    from .profile import generate_monthly_change_report
+
+    # --current-month convenience used by the cron template.
+    if getattr(args, "current_month", False):
+        now = datetime.now()
+        year, month = now.year, now.month
+    else:
+        if not args.month:
+            print(
+                "profile report: pass --month=YYYY-MM (or --current-month)",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            year_s, month_s = args.month.split("-", 1)
+            year, month = int(year_s), int(month_s)
+        except ValueError:
+            print(f"invalid --month value: {args.month!r}", file=sys.stderr)
+            return 2
+
+    idx, store = _open_profile_store()
+    try:
+        if not args.regenerate and not args.dry_run:
+            existing = store.get_change_report(f"{year:04d}-{month:02d}")
+            if existing:
+                print(
+                    f"profile report: {year:04d}-{month:02d} already exists "
+                    "(use --regenerate to overwrite)",
+                    file=sys.stderr,
+                )
+                print(existing["content_md"])
+                return 0
+        try:
+            from .llm import get_provider, LLMUnavailable
+            llm = get_provider()
+        except LLMUnavailable as e:
+            print(
+                f"profile report: {e}\n"
+                "set ANTHROPIC_API_KEY (or configure another provider) "
+                "via ~/.config/memoryd/config.toml.",
+                file=sys.stderr,
+            )
+            return 1
+        result = asyncio.run(
+            generate_monthly_change_report(
+                idx.conn,
+                store,
+                llm=llm,
+                year=year,
+                month=month,
+                dry_run=args.dry_run,
+            )
+        )
+    finally:
+        idx.close()
+
+    print(result.get("content_md", ""))
+    where = result.get("path")
+    if where:
+        print(f"\n(saved to {where})", file=sys.stderr)
+    elif args.dry_run:
+        print("\n(dry-run: nothing persisted)", file=sys.stderr)
+    return 0
+
+
+def _cmd_profile_trends(args: argparse.Namespace) -> int:
+    from .profile import (
+        recall_hot,
+        render_trends_section,
+        rising_triggers,
+        top_triggers,
+    )
+
+    idx, _ = _open_profile_store()
+    try:
+        if args.as_json:
+            payload = {
+                "window_days": args.window_days,
+                "top_triggers": [
+                    {"trigger": t, "hits": h}
+                    for t, h in top_triggers(idx.conn, window_days=args.window_days)
+                ],
+                "rising_triggers": [
+                    {"trigger": t, "recent": r, "prior": p}
+                    for t, r, p in rising_triggers(idx.conn, recent_days=args.window_days)
+                ],
+                "recall_hot": recall_hot(idx.conn),
+            }
+            print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+        else:
+            print(render_trends_section(idx.conn, window_days=args.window_days))
+    finally:
+        idx.close()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="memoryd")
     subs = parser.add_subparsers(dest="cmd", required=True)
@@ -1201,20 +1681,49 @@ def main() -> int:
     p_un.add_argument("--launch-dir", default=str(Path.home() / "Library" / "LaunchAgents"))
     p_un.set_defaults(func=_cmd_uninstall_launchd)
 
-    # install-cron --decay/--digest/--all (Plan 5)
+    # install-cron --decay/--digest/--weekly-identity/--monthly-report/--all
+    # (Plan 5 + Plan 10)
     p_inst_cron = setup_subs.add_parser(
         "install-cron",
-        help="install daily decay / weekly digest cron (cross-platform)",
+        help="install decay / digest / weekly-identity / monthly-report cron jobs",
     )
     p_inst_cron.add_argument("--decay", action="store_true")
     p_inst_cron.add_argument("--digest", action="store_true")
+    p_inst_cron.add_argument(
+        "--weekly-identity",
+        action="store_true",
+        dest="weekly_identity",
+        help="weekly LLM rewrite of profile/identity.md (Sun 02:00)",
+    )
+    p_inst_cron.add_argument(
+        "--monthly-report",
+        action="store_true",
+        dest="monthly_report",
+        help="monthly profile evolution report (1st of month 04:00)",
+    )
+    p_inst_cron.add_argument(
+        "--task",
+        default=None,
+        help="install a specific cron task_key (e.g. weekly_identity, monthly_report)",
+    )
     p_inst_cron.add_argument("--all", action="store_true")
     p_inst_cron.set_defaults(func=_cmd_install_cron)
 
-    # uninstall-cron --decay/--digest/--all
+    # uninstall-cron mirrors the install flags.
     p_un_cron = setup_subs.add_parser("uninstall-cron", help="uninstall cron jobs")
     p_un_cron.add_argument("--decay", action="store_true")
     p_un_cron.add_argument("--digest", action="store_true")
+    p_un_cron.add_argument(
+        "--weekly-identity",
+        action="store_true",
+        dest="weekly_identity",
+    )
+    p_un_cron.add_argument(
+        "--monthly-report",
+        action="store_true",
+        dest="monthly_report",
+    )
+    p_un_cron.add_argument("--task", default=None)
     p_un_cron.add_argument("--all", action="store_true")
     p_un_cron.set_defaults(func=_cmd_uninstall_cron)
 
@@ -1323,6 +1832,11 @@ def main() -> int:
     p_audit.add_argument("--since", default=None, help="ISO timestamp; only events at/after")
     p_audit.add_argument("--event-type", default=None, help="filter by event_type")
     p_audit.add_argument("--json", action="store_true", help="output JSON instead of table")
+    p_audit.add_argument(
+        "--verify",
+        action="store_true",
+        help="walk the prev_hash chain and report any tampering",
+    )
     p_audit.set_defaults(func=cmd_audit)
 
     p_config = subs.add_parser("config", help="show / set memoryd config")
@@ -1426,6 +1940,129 @@ def main() -> int:
     p_web.add_argument("--port", type=int, default=None)
     p_web.add_argument("--no-browser", action="store_true")
     p_web.set_defaults(func=_cmd_web)
+
+    # ------------------------------------------------------------------
+    # Plan 10: knowledge_graph subcommands
+    # ------------------------------------------------------------------
+    p_kg = subs.add_parser(
+        "kg",
+        help="knowledge graph queries (entities / relations / supersedes)",
+    )
+    kg_subs = p_kg.add_subparsers(dest="kg_cmd", required=True)
+
+    p_kg_ent = kg_subs.add_parser("entities", help="top entities by mention_count")
+    p_kg_ent.add_argument("--scope", default=None, help="filter by scope_hash")
+    p_kg_ent.add_argument("--type", default=None, dest="type_",
+                          help="entity type filter (person/library/project/...)")
+    p_kg_ent.add_argument("--top", type=int, default=20)
+    p_kg_ent.add_argument("--window-days", type=int, default=30, dest="window_days")
+    p_kg_ent.add_argument("--json", action="store_true", dest="as_json")
+    p_kg_ent.set_defaults(func=_cmd_kg_entities)
+
+    p_kg_ma = kg_subs.add_parser(
+        "memories-about",
+        help="list memory slugs that mention a given entity",
+    )
+    p_kg_ma.add_argument("entity", help="entity name (fuzzy match) or full entity:id")
+    p_kg_ma.add_argument(
+        "--types",
+        default=None,
+        help="comma-separated memory types to filter (session,decision,...)",
+    )
+    p_kg_ma.add_argument("--json", action="store_true", dest="as_json")
+    p_kg_ma.set_defaults(func=_cmd_kg_memories_about)
+
+    p_kg_ev = kg_subs.add_parser(
+        "evolution",
+        help="show the supersedes chain (old → new) anchored on an entity",
+    )
+    p_kg_ev.add_argument("entity")
+    p_kg_ev.add_argument("--json", action="store_true", dest="as_json")
+    p_kg_ev.set_defaults(func=_cmd_kg_evolution)
+
+    p_kg_sub = kg_subs.add_parser(
+        "subgraph",
+        help="N-hop subgraph anchored on an entity (cytoscape or plain JSON)",
+    )
+    p_kg_sub.add_argument("entity")
+    p_kg_sub.add_argument("--depth", type=int, default=2)
+    p_kg_sub.add_argument("--out", default=None, help="write JSON to file instead of stdout")
+    p_kg_sub.add_argument(
+        "--format",
+        choices=["cytoscape", "json"],
+        default="cytoscape",
+    )
+    p_kg_sub.set_defaults(func=_cmd_kg_subgraph)
+
+    p_kg_conf = kg_subs.add_parser(
+        "conflicts",
+        help="memory pairs that make conflicting statements about the same entity",
+    )
+    p_kg_conf.add_argument("--scope", default=None, help="filter by scope_hash")
+    p_kg_conf.add_argument("--json", action="store_true", dest="as_json")
+    p_kg_conf.set_defaults(func=_cmd_kg_conflicts)
+
+    # ------------------------------------------------------------------
+    # Plan 10: profile self-learning subcommands
+    # ------------------------------------------------------------------
+    p_profile = subs.add_parser(
+        "profile",
+        help="self-learning user profile (identity.md, monthly reports, trends)",
+    )
+    prof_subs = p_profile.add_subparsers(dest="profile_cmd", required=True)
+
+    p_pf_show = prof_subs.add_parser("show", help="print current identity.md")
+    p_pf_show.add_argument("--max-chars", type=int, default=2000, dest="max_chars")
+    p_pf_show.set_defaults(func=_cmd_profile_show)
+
+    p_pf_hist = prof_subs.add_parser("history", help="list profile_versions rows")
+    p_pf_hist.add_argument("--limit", type=int, default=20)
+    p_pf_hist.add_argument("--json", action="store_true", dest="as_json")
+    p_pf_hist.set_defaults(func=_cmd_profile_history)
+
+    p_pf_diff = prof_subs.add_parser(
+        "diff",
+        help="unified diff between two profile_versions rows",
+    )
+    p_pf_diff.add_argument("--from", type=int, required=True, dest="from_")
+    p_pf_diff.add_argument("--to", type=int, required=True)
+    p_pf_diff.set_defaults(func=_cmd_profile_diff)
+
+    p_pf_rw = prof_subs.add_parser(
+        "rewrite",
+        help="LLM rewrite of identity.md (weekly cron + manual ad-hoc)",
+    )
+    p_pf_rw.add_argument("--dry-run", action="store_true")
+    p_pf_rw.add_argument("--window-days", type=int, default=7, dest="window_days")
+    p_pf_rw.add_argument("--max-words", type=int, default=800, dest="max_words")
+    p_pf_rw.set_defaults(func=_cmd_profile_rewrite)
+
+    p_pf_rep = prof_subs.add_parser(
+        "report",
+        help="generate the monthly profile evolution report",
+    )
+    p_pf_rep.add_argument("--month", default=None, help="YYYY-MM (defaults to last full month if --current-month)")
+    p_pf_rep.add_argument(
+        "--current-month",
+        action="store_true",
+        dest="current_month",
+        help="use the current calendar month (used by the monthly cron job)",
+    )
+    p_pf_rep.add_argument("--dry-run", action="store_true")
+    p_pf_rep.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="overwrite an existing report for this month",
+    )
+    p_pf_rep.set_defaults(func=_cmd_profile_report)
+
+    p_pf_tr = prof_subs.add_parser(
+        "trends",
+        help="render the trends markdown section (top / rising / recall_hot)",
+    )
+    p_pf_tr.add_argument("--window-days", type=int, default=7, dest="window_days")
+    p_pf_tr.add_argument("--json", action="store_true", dest="as_json")
+    p_pf_tr.set_defaults(func=_cmd_profile_trends)
 
     args = parser.parse_args()
     return args.func(args)

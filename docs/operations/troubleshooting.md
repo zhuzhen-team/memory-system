@@ -110,7 +110,7 @@ memoryd list --limit=5
 which rg
 
 # 3. SQLite 索引是否损坏
-memoryd audit verify
+memoryd audit --verify
 
 # 4. 强制重建索引
 memoryd rebuild-index
@@ -194,7 +194,7 @@ memoryd grant ~/scopes/finance --duration once
 memoryd show <slug>
 ```
 
-## audit verify 报错
+## audit --verify 报错
 
 不要自己改 `~/.local/share/memoryd/audit/audit.jsonl`！
 
@@ -202,7 +202,7 @@ memoryd show <slug>
 
 ```bash
 # 找到断链处
-memoryd audit verify --verbose 2>&1 | grep "chain broken at"
+memoryd audit --verify -v 2>&1 | grep "chain broken at"
 
 # 真的需要重置（**会丢失审计历史**）
 # 备份现有

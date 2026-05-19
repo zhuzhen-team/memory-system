@@ -163,7 +163,7 @@ memoryd audit --json
 校验：
 
 ```bash
-memoryd audit verify     # 重算 hash 与 stored 比对
+memoryd audit --verify     # 重算 hash 与 stored 比对
 ```
 
 ## Web Dashboard 上的敏感处理
@@ -195,4 +195,4 @@ memoryd show <slug>
 | `mark-sensitive` 后看不到内容 | 这是正常的——授权才能读 |
 | grant 之后还是 403 | 检查 `~/.local/share/memoryd/grants/<hash>.json` 是否存在 + 未过期 |
 | passphrase 输错 | 重启 shell；`export MEMORYD_MASTER_PASSPHRASE=` 改 |
-| audit verify 报错 | 看哪一行断；不要自己改 audit.jsonl |
+| audit --verify 报错 | 看哪一行断；不要自己改 audit.jsonl |

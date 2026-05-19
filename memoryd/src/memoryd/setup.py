@@ -262,6 +262,15 @@ def auto_install() -> dict:
         results["digest_cron"] = str(install_cron("digest"))
     except Exception as e:  # noqa: BLE001
         results["digest_cron_error"] = str(e)
+    # Plan 10 cron jobs: weekly identity rewrite + monthly evolution report.
+    try:
+        results["weekly_identity_cron"] = str(install_cron("weekly_identity"))
+    except Exception as e:  # noqa: BLE001
+        results["weekly_identity_cron_error"] = str(e)
+    try:
+        results["monthly_report_cron"] = str(install_cron("monthly_report"))
+    except Exception as e:  # noqa: BLE001
+        results["monthly_report_cron_error"] = str(e)
     try:
         results["cc_hook"] = str(install_cc_hook())
     except Exception as e:  # noqa: BLE001

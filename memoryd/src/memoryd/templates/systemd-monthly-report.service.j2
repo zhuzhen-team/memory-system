@@ -1,0 +1,10 @@
+[Unit]
+Description=memoryd monthly profile change report
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart={{ memoryd_bin }} profile report --current-month
+Environment="MEMORYD_DATA_ROOT={{ data_root }}"
+StandardOutput=append:{{ log_dir }}/{{ label }}.out.log
+StandardError=append:{{ log_dir }}/{{ label }}.err.log

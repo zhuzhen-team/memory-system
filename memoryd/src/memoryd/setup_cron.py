@@ -45,7 +45,33 @@ _JOBS = {
         "linux_timer": "systemd-digest.timer.j2",
         "windows_template": "windows-digest.xml.j2",
     },
+    "weekly_identity": {
+        # Plan 10: weekly LLM rewrite of profile/identity.md (Sunday 02:00)
+        "label": "com.memoryd.weekly-identity",
+        "schedule": CronSchedule(hour=2, minute=0, weekday=0),  # Sun
+        "macos_template": "launchd-weekly-identity.plist.j2",
+        "linux_service": "systemd-weekly-identity.service.j2",
+        "linux_timer": "systemd-weekly-identity.timer.j2",
+        "windows_template": "windows-weekly-identity.xml.j2",
+    },
+    "monthly_report": {
+        # Plan 10: monthly profile evolution report (1st of month 04:00)
+        # weekday left None so daily template path is taken; the actual
+        # monthly cadence is encoded inside each template (launchd Day=1,
+        # systemd OnCalendar=*-*-01, Windows ScheduleByMonth).
+        "label": "com.memoryd.monthly-report",
+        "schedule": CronSchedule(hour=4, minute=0),
+        "macos_template": "launchd-monthly-report.plist.j2",
+        "linux_service": "systemd-monthly-report.service.j2",
+        "linux_timer": "systemd-monthly-report.timer.j2",
+        "windows_template": "windows-monthly-report.xml.j2",
+    },
 }
+
+
+def known_jobs() -> tuple[str, ...]:
+    """Return the registered cron task keys (stable for help text / tests)."""
+    return tuple(_JOBS.keys())
 
 
 def _ctx(job_key: str) -> dict:

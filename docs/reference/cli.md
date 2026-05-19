@@ -44,6 +44,7 @@ keywords: CLI, memoryd, 子命令, 命令清单
 | `memoryd decay-sweep` | 跑一遍衰减状态机（cron 已自动） |
 | `memoryd audit` | 看审计链 |
 | `memoryd audit --scope=<hash> --since=<iso> --event-type=<t> --json` | 过滤 |
+| `memoryd audit --verify [-v]` | 重算 prev_hash 链，损坏时 exit 1 |
 
 ## 敏感作用域
 
@@ -142,6 +143,31 @@ memoryd setup auto-install
 ```
 
 按当前平台依次装：cron + cc-hook。
+
+## 知识图谱（kg）
+
+```bash
+memoryd kg entities [--scope=<hash>] [--type=<t>] [--top=20] [--window-days=30] [--json]
+memoryd kg memories-about <entity_name_or_id> [--types=session,decision,...] [--json]
+memoryd kg evolution <entity_name_or_id> [--json]
+memoryd kg subgraph <entity_name_or_id> [--depth=2] [--out=<path>] [--format=cytoscape|json]
+memoryd kg conflicts [--scope=<hash>] [--json]
+```
+
+详见 [知识图谱：让记忆从条目堆变成图](../architecture/knowledge-graph.md)。
+
+## 画像（profile）
+
+```bash
+memoryd profile show [--max-chars=2000]            # 当前 identity.md 节选
+memoryd profile history [--limit=20]               # 历次快照
+memoryd profile diff --from=<n> --to=<m>           # 两版 unified diff
+memoryd profile rewrite [--dry-run] [--window-days=7] [--max-words=800]
+memoryd profile report --month=<YYYY-MM> [--dry-run] [--regenerate]
+memoryd profile trends [--window-days=7] [--json]
+```
+
+详见 [画像自学习](../architecture/profile-learning.md)。
 
 ## Web Dashboard
 

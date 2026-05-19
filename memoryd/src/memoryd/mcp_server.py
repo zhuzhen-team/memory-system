@@ -423,8 +423,31 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _disable_fastmcp_version_check() -> None:
+    """Prevent FastMCP's startup banner from blocking on PyPI lookups.
+
+    FastMCP queries pypi.org for the latest version at boot. Behind a strict
+    firewall the network error escapes its narrow ``(httpx.HTTPError, ...)``
+    except clause and crashes the whole MCP transport. Outdated-fastmcp
+    notices aren't actionable from inside an installed app, so we silence it.
+    """
+    try:
+        from fastmcp.utilities import version_check
+
+        version_check.check_for_newer_version = lambda: None  # type: ignore[attr-defined]
+        version_check.get_latest_version = (  # type: ignore[attr-defined]
+            lambda include_prereleases=False: None
+        )
+        version_check._fetch_latest_version = (  # type: ignore[attr-defined]
+            lambda include_prereleases=False: None
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``memoryd-mcp`` console script."""
+    _disable_fastmcp_version_check()
     args = _parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -441,11 +464,14 @@ def main(argv: list[str] | None = None) -> int:
         args.transport, n_tools, include_admin,
     )
 
-    if args.transport == "stdio":
-        mcp.run()
-    else:
-        # FastMCP v3 uses "http" / "streamable-http"; "sse" is legacy.
-        mcp.run(transport="http", host=args.host, port=args.port)
+    try:
+        if args.transport == "stdio":
+            mcp.run()
+        else:
+            # FastMCP v3 uses "http" / "streamable-http"; "sse" is legacy.
+            mcp.run(transport="http", host=args.host, port=args.port)
+    except (EOFError, KeyboardInterrupt, BrokenPipeError) as exc:
+        log.info("memoryd-mcp shutdown: %s", type(exc).__name__)
     return 0
 
 
