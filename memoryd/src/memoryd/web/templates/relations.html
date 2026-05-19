@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}memoryd · 知识图谱{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.0/cytoscape.min.js" defer></script>
+{% endblock %}
+{% block content %}
+<section class="page-relations">
+  <header class="page-header">
+    <h1>知识图谱</h1>
+    <p class="muted">实体 + 关系 N 跳子图 · 点击节点局部展开</p>
+  </header>
+
+  {% if not available %}
+  <div class="notice notice--warn">
+    <strong>知识图谱模块未启用。</strong>
+    没有检测到 <code>entities</code> 表 —— 请先用 CLI 写入记忆，让自动抽取生成实体。
+  </div>
+  {% endif %}
+
+  <form class="filters"
+        id="graph-filters"
+        data-focus-entity="{{ focus_entity or '' }}"
+        data-token="{{ token }}">
+    <label>
+      <span>Scope</span>
+      <select name="scope">
+        <option value="">全部</option>
+        {% for s in scopes %}
+        <option value="{{ s.hash }}" {% if s.hash == scope %}selected{% endif %}>
+          {{ s.hash[:10] }}{% if s.sensitive == "1" %} 🔒{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>实体类型</span>
+      <select name="type">
+        <option value="">全部</option>
+        <option value="person">person</option>
+        <option value="organization">organization</option>
+        <option value="place">place</option>
+        <option value="library">library</option>
+        <option value="tool">tool</option>
+        <option value="project">project</option>
+        <option value="concept">concept</option>
+      </select>
+    </label>
+    <label>
+      <span>深度 <output id="depth-out">{{ depth }}</output></span>
+      <input type="range" name="depth" min="1" max="3" value="{{ depth }}"
+             oninput="document.getElementById('depth-out').value=this.value">
+    </label>
+    <label>
+      <span>时间窗（天）</span>
+      <input type="number" name="window_days" value="{{ window_days }}" min="1" max="365">
+    </label>
+    <label>
+      <span>Top-K</span>
+      <input type="number" name="top_k" value="15" min="3" max="50">
+    </label>
+    <button type="button" id="apply-filters" class="primary">刷新</button>
+  </form>
+
+  <div class="layout-split">
+    <div id="cy" class="graph-canvas" role="figure" aria-label="知识图谱可视化"></div>
+    <aside id="entity-detail" class="detail-panel">
+      <p class="placeholder">点击节点查看实体详情。</p>
+    </aside>
+  </div>
+
+  <details class="legend">
+    <summary>图例</summary>
+    <div class="legend-grid">
+      <div><span class="dot dot--person"></span>person 人物</div>
+      <div><span class="dot dot--organization"></span>organization 组织</div>
+      <div><span class="dot dot--place"></span>place 地点</div>
+      <div><span class="dot dot--library"></span>library 库</div>
+      <div><span class="dot dot--tool"></span>tool 工具</div>
+      <div><span class="dot dot--project"></span>project 项目</div>
+      <div><span class="dot dot--concept"></span>concept 概念</div>
+    </div>
+    <div class="legend-edges">
+      <span class="edge-sample edge--mentions">提及 mentions</span>
+      <span class="edge-sample edge--supersedes">取代 supersedes</span>
+      <span class="edge-sample edge--prefers">偏好 prefers</span>
+      <span class="edge-sample edge--works_on">参与 works_on</span>
+      <span class="edge-sample edge--uses">使用 uses</span>
+      <span class="edge-sample edge--conflicts_with">冲突 conflicts_with</span>
+    </div>
+  </details>
+</section>
+
+<script src="/static/cytoscape-loader.js" defer></script>
+{% endblock %}

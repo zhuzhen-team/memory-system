@@ -1,0 +1,43 @@
+{
+  "export_metadata": {
+    "source_machine": "198.51.100.42",
+    "export_timestamp": "2026-04-19T18:45:05.477441",
+    "total_memories": 2,
+    "database_path": "/Users/example/Library/Application Support/mcp-memory/sqlite_vec.db",
+    "platform": "Darwin",
+    "python_version": "3.12.12",
+    "include_embeddings": false,
+    "filter_tags": null,
+    "exporter_version": "5.0.1"
+  },
+  "memories": [
+    {
+      "content": "深圳龙岗区大运 5 栋 802 配备了意式咖啡机和磨豆机。",
+      "content_hash": "045033d572c3b1986308cbd95d3fefac899180217b4e3ff7bbb73ad8e89ec9fc",
+      "tags": [
+        "location",
+        "深圳",
+        "大运",
+        "设备",
+        "咖啡"
+      ],
+      "created_at": 1776595134.2813802,
+      "updated_at": 1776595134.2813802,
+      "memory_type": "observation",
+      "metadata": {},
+      "export_source": "198.51.100.42"
+    },
+    {
+      "content": "memoryd 首次部署测试：2026-04-19。",
+      "content_hash": "6cd1b4677f8cab347162e795cf129f39c5616c32a34169cfa71e30daab97b128",
+      "tags": [
+        "system-test"
+      ],
+      "created_at": 1776594212.461107,
+      "updated_at": 1776594212.461107,
+      "memory_type": "note",
+      "metadata": {},
+      "export_source": "198.51.100.42"
+    }
+  ]
+}

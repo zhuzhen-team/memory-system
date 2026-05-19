@@ -1,0 +1,37 @@
+你正在从一段 AI 会话里抽取值得长期记住的内容。
+
+4 准则（DURA），每项给 0.0-1.0 分。只有 4 项都 ≥ 0.6 才推荐提升。
+
+- D**urability**：3 个月后这条信息还有意义吗？
+- U**niqueness**：这条是否已经在现有记忆里？
+- R**etrievability**：用户能想出 ≥2 个触发词来找它吗？
+- A**uthority**：是用户明确决策 / 事实，还是 AI 推断？
+
+输入：
+
+Session 正文（已截到 8000 字符内）：
+<<<
+{{session_body}}
+>>>
+
+Scope（项目根路径）：{{scope_root}}
+
+该 scope 现有长期记忆 titles（避免重复推荐）：
+{{existing_titles}}
+
+输出：仅 JSON，无解释，candidates 数组。schema：
+
+[
+  {
+    "type": "decision" | "preference" | "fact" | "playbook" | "warning",
+    "title": "<一行，≤100 字>",
+    "body": "<markdown 正文，≤500 字>",
+    "triggers": ["<关键词>", "<关键词>"],
+    "dura": { "D": 0.0-1.0, "U": 0.0-1.0, "R": 0.0-1.0, "A": 0.0-1.0 },
+    "reasoning": "<一行>",
+    "supersedes": []
+  }
+]
+
+如果没有任何候选满足 4 项 ≥ 0.6，输出 `[]`。
+绝不输出非 JSON 内容（包括 ```json fence）。

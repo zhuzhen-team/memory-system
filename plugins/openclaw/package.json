@@ -1,0 +1,26 @@
+{
+  "name": "@memoryd/openclaw-plugin",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenClaw native plugin: 3 工具 (memory_search/get/transcript) + 2 hook (before_agent_start/agent_end)，接入本地 memoryd 后端。",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./register": "./src/register.js",
+    "./payload": "./src/payload.js",
+    "./client": "./src/memoryd_client.js",
+    "./tools": "./src/tools/index.js",
+    "./hooks/before_agent_start": "./src/hooks/before_agent_start.js",
+    "./hooks/agent_end": "./src/hooks/agent_end.js"
+  },
+  "openclaw": {
+    "extensions": ["./src/index.js"]
+  },
+  "scripts": {
+    "test": "node --test 'tests/*.test.mjs'"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

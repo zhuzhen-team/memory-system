@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}memoryd 仪表板{% endblock %}</title>
+<link rel="stylesheet" href="/static/base.css">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/htmx-extras.js" defer></script>
+{% block head %}{% endblock %}
+</head>
+<body>
+<header class="site-header">
+  <div class="brand">
+    <a href="/?token={{ token }}">memoryd</a>
+    <span class="tagline">本地记忆仪表板</span>
+  </div>
+  <nav class="site-nav">
+    <a href="/?token={{ token }}">首页</a>
+    <a href="/memories?token={{ token }}">记忆列表</a>
+    <a href="/relations?token={{ token }}">关系图</a>
+    <a href="/trends?token={{ token }}">趋势</a>
+    <a href="/identity?token={{ token }}">画像</a>
+    <a href="/audit?token={{ token }}">审计</a>
+    <a href="/digest?token={{ token }}">促进队列</a>
+  </nav>
+  <div class="header-actions">
+    <button class="theme-toggle" type="button" aria-label="切换主题">主题</button>
+  </div>
+</header>
+<main class="site-main">
+{% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <small>memoryd · 本地优先 · 数据存储于 ~/.local/share/memoryd</small>
+</footer>
+</body>
+</html>

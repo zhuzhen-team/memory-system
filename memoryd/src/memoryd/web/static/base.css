@@ -1,0 +1,10 @@
+body { font-family: -apple-system, BlinkMacSystemFont, monospace; background: #fafafa; color: #222; max-width: 900px; margin: 2em auto; padding: 0 1em; line-height: 1.4; }
+header { border-bottom: 1px solid #ddd; padding-bottom: 0.5em; margin-bottom: 1em; }
+header a { margin-right: 1em; color: #06f; text-decoration: none; }
+header a:hover { text-decoration: underline; }
+ul { list-style: none; padding-left: 0; }
+li { padding: 0.4em 0; border-bottom: 1px solid #eee; }
+small { color: #888; margin-left: 0.5em; }
+pre { background: #fff; padding: 1em; border: 1px solid #ddd; white-space: pre-wrap; overflow-x: auto; }
+input[name="q"] { width: 100%; padding: 0.5em; font-size: 1em; box-sizing: border-box; }
+form { margin-bottom: 1em; }

@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/memories?token={{ token }}">← back</a></p>
+<h1>{{ memory.slug }}</h1>
+<pre>{{ memory.body }}</pre>
+{% endblock %}

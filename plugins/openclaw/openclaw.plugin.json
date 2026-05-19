@@ -1,0 +1,83 @@
+{
+  "id": "memoryd-openclaw",
+  "name": "memoryd OpenClaw bridge",
+  "activation": {
+    "onStartup": true
+  },
+  "permissions": {
+    "allowConversationAccess": true,
+    "allowPromptInjection": true
+  },
+  "tools": [
+    {
+      "name": "memory_search",
+      "description": "在用户的本地记忆系统中检索相关记忆。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "自然语言查询，支持中文" },
+          "top_k": { "type": "integer", "default": 10 },
+          "scope": { "type": "string", "default": "auto" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "memory_get",
+      "description": "取一条记忆的完整 markdown 内容 + frontmatter。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "memory_id": { "type": "string" }
+        },
+        "required": ["memory_id"]
+      }
+    },
+    {
+      "name": "memory_transcript",
+      "description": "取这条记忆所属 session 的完整 transcript（如可用）。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "memory_id": { "type": "string" }
+        },
+        "required": ["memory_id"]
+      }
+    }
+  ],
+  "hooks": [
+    { "event": "before_agent_start", "handler": "src/hooks/before_agent_start.js" },
+    { "event": "agent_end", "handler": "src/hooks/agent_end.js" }
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "transport": {
+        "type": "string",
+        "enum": ["cli", "http"],
+        "default": "cli",
+        "description": "调用 memoryd 的方式：本地 CLI 或本地 HTTP server"
+      },
+      "binPath": {
+        "type": "string",
+        "description": "memoryd 可执行文件路径（覆盖 MEMORYD_BIN 环境变量）"
+      },
+      "port": {
+        "type": "integer",
+        "default": 8765,
+        "description": "transport=http 时本地服务端口"
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用 agent_end 自动 capture"
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用 before_agent_start 自动注入最近上下文"
+      }
+    }
+  }
+}

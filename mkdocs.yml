@@ -1,0 +1,118 @@
+site_name: memory-system
+site_description: 本地优先的个人记忆系统，为 Claude Code / Codex / OpenClaw 三端 AI 提供同一份会自动学习用户画像的记忆底座。
+site_url: https://zhuzhen-team.github.io/memory-system/
+repo_url: https://github.com/zhuzhen-team/memory-system
+repo_name: zhuzhen-team/memory-system
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - toc.follow
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: 切到暗色
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: 切到亮色
+  font:
+    text: Roboto
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - def_list
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - toc:
+      permalink: "#"
+      toc_depth: 3
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+  - macros
+  - mermaid2
+
+nav:
+  - 首页: index.md
+  - 入门:
+    - 项目概览: getting-started/overview.md
+    - 安装: getting-started/installation.md
+    - 首次运行: getting-started/first-run.md
+    - 核心概念: getting-started/concepts.md
+  - 架构:
+    - 全景: architecture/overview.md
+    - 存储层: architecture/storage.md
+    - 搜索: architecture/search.md
+    - 治理: architecture/governance.md
+    - 知识图谱: architecture/knowledge-graph.md
+    - 画像自学习: architecture/profile-learning.md
+    - 跨设备同步: architecture/sync.md
+  - 三端集成:
+    - Claude Code: integrations/claude-code.md
+    - Codex: integrations/codex.md
+    - OpenClaw: integrations/openclaw.md
+  - 参考手册:
+    - 数据模型: reference/data-model.md
+    - CLI 命令: reference/cli.md
+    - MCP 工具: reference/mcp-tools.md
+    - Web 仪表板: reference/web-dashboard.md
+    - memories.json 格式: reference/memories-json.md
+  - 运维:
+    - 日常使用: operations/daily.md
+    - 定时任务: operations/cron.md
+    - 同步配置: operations/sync-setup.md
+    - 加密: operations/encryption.md
+    - 故障排查: operations/troubleshooting.md
+    - 卸载: operations/uninstall.md
+  - 开发:
+    - 仓库结构: development/repo-layout.md
+    - 模块来源: development/module-fork-map.md
+    - 测试: development/testing.md
+    - 贡献: development/contributing.md

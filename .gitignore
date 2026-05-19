@@ -1,0 +1,32 @@
+.DS_Store
+__MACOSX/
+*.tmp
+*.bak
+*.swp
+
+# Local runtime state
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+logs/
+
+# Python / Node local artifacts
+.venv/
+venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+node_modules/
+dist/
+build/
+
+# MkDocs build output
+site/
+
+# OS / sync conflict noise
+*.sync-conflict-*
+*冲突文件*

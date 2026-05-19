@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>audit log</h1>
+<form method="get">
+<input name="scope" value="{{ scope or '' }}" placeholder="scope_hash">
+<input name="since" value="{{ since or '' }}" placeholder="ISO since (e.g. 2026-05-01T00:00:00+00:00)">
+<input name="event_type" value="{{ event_type or '' }}" placeholder="event_type">
+<input type="hidden" name="token" value="{{ token }}">
+<button type="submit">filter</button>
+</form>
+<table>
+<thead><tr><th>ts</th><th>scope</th><th>event</th><th>tool</th><th>result</th></tr></thead>
+<tbody>
+{% for e in entries %}
+<tr>
+<td>{{ e.ts or '' }}</td>
+<td>{{ e.scope_hash or '' }}</td>
+<td>{{ e.event_type or '' }}</td>
+<td>{{ e.tool or '' }}</td>
+<td>{{ e.result or '' }}</td>
+</tr>
+{% else %}
+<tr><td colspan="5"><em>no entries</em></td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% endblock %}

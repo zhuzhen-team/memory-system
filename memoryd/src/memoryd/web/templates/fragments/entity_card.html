@@ -1,0 +1,33 @@
+<article class="entity-card-full">
+  <header>
+    <span class="badge badge--{{ entity.type }}">{{ entity.type }}</span>
+    <h3 class="entity-name">{{ entity.name }}</h3>
+    <small class="muted">{{ entity.id }}</small>
+  </header>
+  <dl class="kv">
+    <dt>提及次数</dt><dd>{{ entity.mention_count }}</dd>
+    <dt>状态</dt><dd>{{ entity.decay_state }}</dd>
+    {% if entity.first_seen_at %}
+    <dt>首次出现</dt><dd>{{ entity.first_seen_at }}</dd>
+    {% endif %}
+  </dl>
+  {% if neighbors %}
+  <section>
+    <h4>关联（{{ neighbors | length }}）</h4>
+    <ul class="neighbor-list">
+    {% for n in neighbors %}
+      <li>
+        <span class="edge-sample edge--{{ n.predicate }}">{{ n.predicate }}</span>
+        <strong>{{ n.other.name }}</strong>
+        <small class="muted">{{ n.other.type }}</small>
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% if entity.id %}
+  <a class="link" href="/relations/entity/{{ entity.id }}?token={{ token }}">
+    在图谱中聚焦 →
+  </a>
+  {% endif %}
+</article>

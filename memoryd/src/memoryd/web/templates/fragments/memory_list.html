@@ -1,0 +1,21 @@
+<ul class="memory-list">
+{% for item in items %}
+<li class="memory-item {% if item.sensitive %}is-sensitive{% endif %}">
+  {% if item.sensitive %}
+    <span class="lock" aria-label="敏感">🔒</span>
+    <span class="memory-title">{{ item.title }}</span>
+  {% else %}
+    <a class="memory-title" href="/memories/{{ item.slug }}?token={{ token }}">
+      {{ item.title }}
+    </a>
+  {% endif %}
+  <span class="memory-meta">
+    <span class="badge badge--{{ item.type }}">{{ item.type }}</span>
+    <small class="scope-hash">{{ item.scope_hash[:10] }}</small>
+  </span>
+</li>
+{% else %}
+<li class="empty">无匹配记忆。</li>
+{% endfor %}
+</ul>
+<p class="muted"><small>第 {{ page }} 页</small></p>

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}memoryd · 仪表板{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <header class="page-header">
+    <h1>仪表板</h1>
+    <p class="muted">最近 20 条记忆 · 全站统计 · 各功能入口</p>
+  </header>
+
+  <div class="stats-grid">
+    <a class="stat-card" href="/memories?token={{ token }}">
+      <span class="stat-label">记忆总数</span>
+      <span class="stat-value">{{ stats.memory_count }}</span>
+    </a>
+    <a class="stat-card" href="/memories?token={{ token }}">
+      <span class="stat-label">scope 数</span>
+      <span class="stat-value">{{ stats.scope_count }}</span>
+    </a>
+    <a class="stat-card" href="/relations?token={{ token }}">
+      <span class="stat-label">实体</span>
+      <span class="stat-value">{{ stats.entity_count }}</span>
+    </a>
+    <a class="stat-card" href="/relations?token={{ token }}">
+      <span class="stat-label">关系</span>
+      <span class="stat-value">{{ stats.relation_count }}</span>
+    </a>
+    <a class="stat-card" href="/identity?token={{ token }}">
+      <span class="stat-label">画像版本</span>
+      <span class="stat-value">{{ stats.profile_versions }}</span>
+    </a>
+    <a class="stat-card {% if stats.pending_promotions %}stat-card--alert{% endif %}"
+       href="/digest?token={{ token }}">
+      <span class="stat-label">待审促进</span>
+      <span class="stat-value">{{ stats.pending_promotions }}</span>
+    </a>
+  </div>
+
+  <section class="search-section">
+    <form class="search-form"
+          hx-get="/search"
+          hx-target="#search-results"
+          hx-trigger="keyup changed delay:300ms from:input[name=q]">
+      <input name="q" placeholder="搜索记忆内容…" autocomplete="off">
+      <input type="hidden" name="token" value="{{ token }}">
+    </form>
+    <div id="search-results" class="search-results"></div>
+  </section>
+
+  <section class="recent-section">
+    <div class="section-head">
+      <h2>最近记忆</h2>
+      <a class="link" href="/memories?token={{ token }}">查看全部 →</a>
+    </div>
+    <ul class="memory-list">
+      {% for item in recent %}
+      <li class="memory-item {% if item.sensitive %}is-sensitive{% endif %}">
+        {% if item.sensitive %}
+          <span class="lock" aria-label="敏感">🔒</span>
+          <span class="memory-title">{{ item.title }}</span>
+        {% else %}
+          <a class="memory-title" href="/memories/{{ item.slug }}?token={{ token }}">
+            {{ item.title }}
+          </a>
+        {% endif %}
+        <span class="memory-meta">
+          <span class="badge badge--{{ item.type }}">{{ item.type }}</span>
+          <small class="scope-hash">{{ item.scope_hash[:10] }}</small>
+        </span>
+      </li>
+      {% else %}
+      <li class="empty">尚无任何记忆，使用 <code>memoryd</code> 命令开始记录。</li>
+      {% endfor %}
+    </ul>
+  </section>
+</section>
+{% endblock %}

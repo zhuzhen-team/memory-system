@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}memoryd · 趋势{% endblock %}
+{% block content %}
+<section class="page-trends">
+  <header class="page-header">
+    <h1>趋势</h1>
+    <p class="muted">trigger 频次 · 上升话题 · 高频回忆 · 活跃实体</p>
+    <form class="window-form" method="get">
+      <label>
+        窗口（天）
+        <input type="number" name="window" value="{{ window }}" min="1" max="90">
+      </label>
+      <input type="hidden" name="token" value="{{ token }}">
+      <button type="submit">应用</button>
+    </form>
+  </header>
+
+  {% if not available %}
+  <div class="notice notice--warn">
+    <strong>画像模块未启用。</strong>
+    数据库尚无 <code>profile_versions</code> 表 —— 请先跑一次 <code>memoryd</code> 让 schema 初始化。
+  </div>
+  {% endif %}
+
+  <section class="trend-section">
+    <h2>近 {{ window }} 天 Top Triggers</h2>
+    {% if top_triggers %}
+      <ol class="bar-list">
+      {% for trigger, hits in top_triggers %}
+        <li class="bar-row">
+          <span class="bar-label">{{ trigger }}</span>
+          <span class="bar-track">
+            <span class="bar-fill" style="width: {{ (hits / top_triggers_max * 100) | round(1) }}%"></span>
+          </span>
+          <span class="bar-value">{{ hits }}</span>
+        </li>
+      {% endfor %}
+      </ol>
+    {% else %}
+      <p class="empty">暂无 trigger 命中数据。</p>
+    {% endif %}
+  </section>
+
+  <section class="trend-section">
+    <h2>上升中的话题（近 {{ window }} 天 vs 前 {{ window * 2 }} 天）</h2>
+    {% if rising %}
+      <table class="rising-table">
+        <thead><tr><th>trigger</th><th>近期</th><th>过去</th><th>Δ</th></tr></thead>
+        <tbody>
+        {% for trig, recent, prior in rising %}
+          <tr>
+            <td>{{ trig }}</td>
+            <td>{{ recent }}</td>
+            <td>{{ prior }}</td>
+            <td class="delta">+{{ recent - prior }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">暂无明显上升话题。</p>
+    {% endif %}
+  </section>
+
+  <section class="trend-section">
+    <h2>高频回忆</h2>
+    {% if recall_hot %}
+      <ul class="memory-list">
+      {% for m in recall_hot %}
+        <li class="memory-item">
+          <span class="badge badge--{{ m.type }}">{{ m.type }}</span>
+          <span class="memory-title">{{ m.title }}</span>
+          <span class="memory-meta"><small>×{{ m.recall_count }}</small></span>
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">暂无被反复召回的记忆。</p>
+    {% endif %}
+  </section>
+
+  <section class="trend-section">
+    <h2>活跃实体（近 {{ window * 4 }} 天）</h2>
+    {% if top_entities %}
+      <ul class="entity-list">
+      {% for e in top_entities %}
+        <li class="entity-card">
+          <a href="/relations/entity/{{ e.id }}?token={{ token }}">
+            <span class="badge badge--{{ e.type }}">{{ e.type }}</span>
+            <span class="entity-name">{{ e.name }}</span>
+            <small>×{{ e.mention_count }}</small>
+            <small class="muted">{{ e.decay_state }}</small>
+          </a>
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">暂无活跃实体。</p>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

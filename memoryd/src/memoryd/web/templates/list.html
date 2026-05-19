@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>memories</h1>
+<p>{% if type %}type={{ type }}{% endif %} {% if scope %}scope={{ scope }}{% endif %} page={{ page }}</p>
+<ul>
+{% for item in items %}
+<li>{% if item.sensitive %}🔒{% else %}<a href="/memories/{{ item.slug }}?token={{ token }}">{% endif %}
+[{{ item.type }}] {{ item.title }} <small>{{ item.scope_hash }}</small>
+{% if not item.sensitive %}</a>{% endif %}
+</li>
+{% else %}
+<li><em>no memories</em></li>
+{% endfor %}
+</ul>
+{% endblock %}

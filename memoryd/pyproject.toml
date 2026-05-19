@@ -1,0 +1,77 @@
+[project]
+name = "memoryd"
+description = "Personal memory daemon — local-first cross-harness memory + auto-learned user profile."
+requires-python = ">=3.11"
+version = "1.0.0"
+dependencies = [
+    # MCP + 原有核心
+    "mcp[cli]>=1.0.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "watchdog>=4.0",
+    "anthropic>=0.40",
+    "keyring>=24",
+    "cryptography>=42",
+    "jinja2>=3.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "textual>=0.40",
+    # CLI 现代化（typer 渐进迁移，rich 终端美化）
+    "typer>=0.14.0",
+    "rich>=13.7.0",
+    # 向量层（Milvus Lite 嵌入式 + bge-m3 ONNX 默认）
+    "pymilvus>=2.5.0,!=2.6.10",
+    "milvus-lite>=2.5.0 ; sys_platform != 'win32'",
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
+    "huggingface-hub>=0.20",
+    "numpy>=1.26",
+    # 云端 embedding / LLM 备选
+    "openai>=1.0",
+    # MCP 装饰器风格（19 工具走 fastmcp 更省）
+    "fastmcp>=0.0.5",
+    # 知识图谱（jieba 中文兜底 + networkx N-hop BFS）
+    "jieba>=0.42.1",
+    "networkx>=3.0",
+    # 同步 I/O
+    "aiofiles>=23.0",
+]
+
+[project.optional-dependencies]
+# 完整本地 embedding 候选
+local = [
+    "sentence-transformers>=3.0",
+]
+# 文档站点（仅本地预览/CI 构建用，不进 runtime）
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.1",
+    "mkdocs-macros-plugin>=0.8.5",
+    "mkdocs-mermaid2-plugin>=1.1.5",
+    "pymdown-extensions>=10.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+all = ["memoryd[local,docs,dev]"]
+
+[project.scripts]
+memoryd = "memoryd.cli:main"
+memoryd-server = "memoryd.server:main"
+memoryd-mcp = "memoryd.mcp_server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/memoryd"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/memoryd/templates" = "memoryd/templates"

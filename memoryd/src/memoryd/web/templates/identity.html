@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}memoryd · 用户画像{% endblock %}
+{% block content %}
+<section class="page-identity">
+  <header class="page-header">
+    <h1>用户画像 identity.md</h1>
+    <p class="muted">LLM 每周重写的人格摘要 · 历次快照 · 月度演化报告</p>
+  </header>
+
+  {% if not available and not current %}
+  <div class="notice notice--warn">
+    <strong>尚无任何画像版本。</strong>
+    画像由每周 cron 自动生成；也可手动跑 <code>memoryd profile rewrite</code>。
+  </div>
+  {% endif %}
+
+  <div class="layout-identity">
+
+    <article class="identity-current">
+      {% if diff_lines is not none %}
+        <h2>版本对比 v{{ diff_from }} → v{{ diff_to }}</h2>
+        {% if diff_lines %}
+          <pre class="diff-view">
+{%- for line in diff_lines -%}
+<span class="diff-line diff-{{ line.kind }}">{{ line.text }}</span>
+{% endfor -%}
+          </pre>
+        {% else %}
+          <p class="empty">两个版本之间无差异，或参数不合法。</p>
+        {% endif %}
+      {% elif selected_version %}
+        <h2>v{{ selected_version.version_num }} <small class="muted">{{ selected_version.written_at }}</small></h2>
+        {% if selected_version.change_summary %}
+        <p class="change-summary">摘要：{{ selected_version.change_summary }}</p>
+        {% endif %}
+        <pre class="identity-body">{{ selected_version.content_md }}</pre>
+      {% elif current %}
+        <h2>当前 identity.md</h2>
+        <p class="muted"><small>{{ current.path }} · 最后更新 {{ current.mtime[:19] }}</small></p>
+        <pre class="identity-body">{{ current.body }}</pre>
+      {% else %}
+        <p class="empty">画像文件尚未生成。</p>
+      {% endif %}
+    </article>
+
+    <aside class="identity-side">
+      <section class="version-list">
+        <h3>历次版本</h3>
+        {% if versions %}
+          <ol>
+          {% for v in versions %}
+            <li class="version-item">
+              <a href="/identity/version/{{ v.version_num }}?token={{ token }}">
+                v{{ v.version_num }}
+              </a>
+              <small class="muted">{{ v.written_at[:10] }} · {{ v.trigger }}</small>
+              {% if v.change_summary %}
+              <div class="version-summary">{{ v.change_summary }}</div>
+              {% endif %}
+            </li>
+          {% endfor %}
+          </ol>
+        {% else %}
+          <p class="empty">无历史快照。</p>
+        {% endif %}
+      </section>
+
+      {% if versions|length >= 2 %}
+      <section class="diff-form">
+        <h3>对比两版</h3>
+        <form method="get" action="/identity/diff">
+          <label>从 v
+            <select name="from">
+              {% for v in versions %}
+              <option value="{{ v.version_num }}">{{ v.version_num }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>到 v
+            <select name="to">
+              {% for v in versions %}
+              <option value="{{ v.version_num }}" {% if loop.first %}selected{% endif %}>{{ v.version_num }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <input type="hidden" name="token" value="{{ token }}">
+          <button type="submit">对比</button>
+        </form>
+      </section>
+      {% endif %}
+
+      <section class="report-list">
+        <h3>月度报告</h3>
+        {% if reports %}
+          <ul>
+          {% for r in reports %}
+            <li>
+              <a href="/api/identity/report/{{ r.period }}?token={{ token }}" target="_blank">
+                {{ r.period }}
+              </a>
+              <small class="muted">
+                v×{{ r.versions_count }} · sup×{{ r.supersedes_count }}
+                · +{{ r.entities_added }}/-{{ r.entities_dropped }}
+              </small>
+            </li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">尚无月度报告。</p>
+        {% endif %}
+      </section>
+    </aside>
+
+  </div>
+</section>
+{% endblock %}

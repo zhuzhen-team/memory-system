@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>digest (pending promotions)</h1>
+<p><small>This page is read-only. Use <code>memoryd digest --tui</code> for approve/reject/merge.</small></p>
+<ul>
+{% for item in items %}
+<li>
+<strong>[{{ item.proposed_type }}]</strong> {{ item.proposed_title }}
+<small>from {{ item.source_session_slug }} · #{{ item.id }}</small>
+<br>
+<small><em>{{ item.reasoning }}</em></small>
+</li>
+{% else %}
+<li><em>no pending promotions</em></li>
+{% endfor %}
+</ul>
+{% endblock %}
