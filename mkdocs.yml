@@ -85,6 +85,7 @@ nav:
   - 给用户:
     - 让 AI 帮你装: user/install-via-ai.md
     - LLM provider 选项: user/llm-providers.md
+    - 复用 Claude Code: user/reusing-claude-code.md
     - 5 分钟开始: getting-started/quickstart.md
     - 项目概览: getting-started/overview.md
     - 详细安装: getting-started/installation.md

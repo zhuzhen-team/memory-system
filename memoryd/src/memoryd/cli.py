@@ -480,6 +480,55 @@ def _cmd_auto_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_llm_test(args: argparse.Namespace) -> int:
+    """Run a single round-trip against the configured LLM provider.
+
+    Useful to verify "the wiring is end-to-end working" without needing to
+    trigger a full capture/analyze flow. Prints provider, model, latency,
+    and the assistant's literal reply.
+    """
+    import asyncio as _asyncio
+    import time as _time
+    from .config import load_config
+    from .llm import LLMMessage, LLMUnavailable, get_llm
+
+    cfg = load_config()
+    provider_name = cfg.get("llm", {}).get("provider", "anthropic")
+    model = cfg.get("llm", {}).get("model")
+
+    print(f"provider: {provider_name}")
+    print(f"model:    {model}")
+    try:
+        llm = get_llm(provider=provider_name, model=model)
+    except LLMUnavailable as exc:
+        print(f"FAIL: provider construction → {exc}")
+        return 2
+
+    t0 = _time.monotonic()
+    try:
+        reply = _asyncio.run(
+            llm.generate([
+                LLMMessage(role="system", content="Reply with exactly the word OK and nothing else."),
+                LLMMessage(role="user", content="ping"),
+            ])
+        )
+    except LLMUnavailable as exc:
+        print(f"FAIL: generate() → {exc}")
+        return 2
+    except Exception as exc:  # noqa: BLE001
+        print(f"FAIL: unexpected → {type(exc).__name__}: {exc}")
+        return 2
+    elapsed = _time.monotonic() - t0
+    reply_one_line = " ".join(reply.split())[:200]
+    print(f"latency:  {elapsed:.2f}s")
+    print(f"reply:    {reply_one_line!r}")
+    if "OK" in reply.upper():
+        print("OK: provider returned the expected token.")
+        return 0
+    print("WARN: provider replied but did not include 'OK'; output may be noisy or model misbehaving.")
+    return 1
+
+
 def _cmd_backfill(args: argparse.Namespace) -> int:
     """Batch-run ``analyze-session`` on every session that has no promotions yet.
 
@@ -489,6 +538,7 @@ def _cmd_backfill(args: argparse.Namespace) -> int:
     import os as _os
     import subprocess as _sp
     import sys as _sys
+    import time as _time
     from pathlib import Path as _Path
     from .index import open_index as _open_index
 
@@ -516,25 +566,49 @@ def _cmd_backfill(args: argparse.Namespace) -> int:
     if not slugs:
         print("backfill: nothing to do (every session already analyzed)")
         return 0
-    print(f"backfill: {len(slugs)} session(s) pending — each call spawns claude / API and may take 3-10s")
+    avg_sec = 8  # rough wall-clock per analyze (claude CLI spawn + LLM round-trip)
+    est_min = max(1, (len(slugs) * avg_sec + 59) // 60)
+    print(f"backfill: {len(slugs)} session(s) pending — ETA ~{est_min} 分钟（每条 ~{avg_sec}s）")
     if args.dry_run:
         for s in slugs:
             print(f"  [dry] {s}")
         return 0
     memoryd_bin = _sys.argv[0]
+    t_start = _time.monotonic()
+    succeeded = failed = 0
     for i, slug in enumerate(slugs, 1):
+        t0 = _time.monotonic()
         try:
             r = _sp.run(
                 [memoryd_bin, "analyze-session", slug],
                 capture_output=True, text=True, timeout=240,
             )
-            tail = (r.stdout or r.stderr or "").strip().split("\n")[-1][:80]
-            ok = "ok" if r.returncode == 0 else f"rc={r.returncode}"
-            print(f"  [{i:3d}/{len(slugs)}] {slug[:55]:<55s} {ok} {tail}")
+            tail = (r.stdout or r.stderr or "").strip().split("\n")[-1][:60]
+            if r.returncode == 0:
+                succeeded += 1
+                status = "✓"
+            else:
+                failed += 1
+                status = f"✗ rc={r.returncode}"
         except _sp.TimeoutExpired:
-            print(f"  [{i:3d}/{len(slugs)}] {slug[:55]:<55s} TIMEOUT (>240s)")
+            failed += 1
+            status = "✗ TIMEOUT(>240s)"
+            tail = ""
         except Exception as e:  # noqa: BLE001
-            print(f"  [{i:3d}/{len(slugs)}] {slug[:55]:<55s} ERROR: {e}")
+            failed += 1
+            status = "✗"
+            tail = f"ERROR: {e}"[:60]
+        dt = _time.monotonic() - t0
+        elapsed = _time.monotonic() - t_start
+        remaining = max(0, len(slugs) - i)
+        avg_per = elapsed / i
+        eta_sec = int(remaining * avg_per)
+        eta = f"剩 {eta_sec//60}m{eta_sec%60:02d}s" if remaining else "完成"
+        print(f"  [{i:3d}/{len(slugs)}] {dt:4.1f}s {status:14s} {slug[:48]:<48s} {tail:<40s} {eta}")
+    total = _time.monotonic() - t_start
+    print(f"backfill: 完成 — {succeeded} 成功, {failed} 失败, 总耗时 {int(total//60)}m{int(total%60):02d}s")
+    print("跑 `memoryd kg entities --top=30` 看抽出的实体；`memoryd profile show` 看画像。")
+    return 0 if failed == 0 else 1
     print(f"backfill: done. Run `memoryd kg entities --top=30` to see what got extracted.")
     return 0
 
@@ -1972,6 +2046,20 @@ def main() -> int:
     p_backfill.add_argument("--limit", type=int, default=50, help="最多跑多少条（默认 50）")
     p_backfill.add_argument("--dry-run", action="store_true", help="只列要跑的 slug，不实际调 LLM")
     p_backfill.set_defaults(func=_cmd_backfill)
+
+    # `llm test` — one-shot end-to-end sanity check of the configured LLM
+    # provider. Prints latency + reply so users can verify before relying on
+    # weekly identity / backfill flows.
+    p_llm = subs.add_parser(
+        "llm",
+        help="LLM 子命令（test 验证当前 provider 通路）",
+    )
+    p_llm_subs = p_llm.add_subparsers(dest="llm_subcmd", required=True)
+    p_llm_test = p_llm_subs.add_parser(
+        "test",
+        help="跑一次 ping → 验证 provider 真能调通（含 latency）",
+    )
+    p_llm_test.set_defaults(func=_cmd_llm_test)
 
     p_decay = subs.add_parser("decay-sweep", help="step memories through alive→dim→soft-forgotten state machine")
     p_decay.set_defaults(func=cmd_decay_sweep)

@@ -78,7 +78,7 @@ memoryd web                 # 启动 Web Dashboard：浏览所有记忆 + 关系
 
 | provider | 怎么配 | 成本 |
 |---|---|---|
-| **`claude-code`** | 已经在用 CC 订阅，零额外配置 | $0（用 CC 订阅 quota） |
+| **`claude-code`** | 已经在用 CC 订阅，零额外配置（[复用机制详解](https://EthanQC.github.io/memory-system/user/reusing-claude-code/)） | $0（用 CC 订阅 quota） |
 | `anthropic` | `export ANTHROPIC_API_KEY=sk-ant-...` | 按 token |
 | `openai` | `export OPENAI_API_KEY=...` | 按 token |
 | `ollama` | 本地装 ollama + 跑 model | $0（本地） |

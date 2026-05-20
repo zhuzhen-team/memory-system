@@ -21,10 +21,34 @@ def gen_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def _port_in_use(port: int) -> bool:
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", port))
+    except OSError:
+        return True
+    finally:
+        s.close()
+    return False
+
+
 def run(port: int | None = None, open_browser: bool = True) -> int:
-    """Start uvicorn with random port + token; blocks until SIGINT."""
+    """Start uvicorn with random port + token; blocks until SIGINT.
+
+    If ``port`` was explicitly requested but already bound, print a friendly
+    hint instead of letting uvicorn dump a raw OSError + 500.
+    """
     import uvicorn
     from . import create_app
+    if port is not None and _port_in_use(port):
+        print(
+            f"memoryd web: 端口 {port} 已被占用。\n"
+            f"   - 用别的端口：memoryd web --port=18765\n"
+            f"   - 或不指定 --port，自动挑空闲端口\n"
+            f"   - 看占用方：lsof -i :{port}",
+            file=sys.stderr, flush=True,
+        )
+        return 1
     p = port or pick_free_port()
     token = gen_token()
     data_root = Path(

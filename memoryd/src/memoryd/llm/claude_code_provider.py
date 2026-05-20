@@ -128,8 +128,8 @@ class ClaudeCodeProvider:
             proc = await asyncio.create_subprocess_exec(
                 self._binary,
                 "-p",
-                "--model",
-                self.model,
+                "--model", self.model,
+                "--output-format", "json",  # 结构化 JSON 输出，比 raw text 解析更稳
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -156,7 +156,21 @@ class ClaudeCodeProvider:
                 f"claude CLI exited {proc.returncode}: "
                 f"{stderr_b.decode('utf-8', 'replace')[:300]}"
             )
-        return stdout_b.decode("utf-8", "replace").strip()
+        raw = stdout_b.decode("utf-8", "replace").strip()
+        # With --output-format=json, claude wraps the reply in
+        #   {"type":"result","subtype":"success","result":"...assistant text...","is_error":false,...}
+        # Unwrap to the actual assistant text so downstream parsers don't see meta.
+        try:
+            envelope = json.loads(raw)
+            if isinstance(envelope, dict) and envelope.get("type") == "result":
+                if envelope.get("is_error"):
+                    raise LLMUnavailable(
+                        f"claude CLI returned error: {envelope.get('result','')[:200]}"
+                    )
+                return str(envelope.get("result", "")).strip()
+        except (json.JSONDecodeError, ValueError):
+            pass  # fall through: maybe CLI version didn't honor --output-format
+        return raw
 
     async def generate(
         self,
