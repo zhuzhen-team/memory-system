@@ -133,19 +133,27 @@ def test_generate_handoff_no_llm_renders_fallback(isolated_root: Path, tmp_path:
 # ---------- generate_handoff LLM path ----------
 
 
-class _StubProvider:
-    """Fake LLM that captures the prompt and returns a canned 6-block body."""
+_DEFAULT_STUB_RESPONSE = (
+    "# HANDOFF — test (2026-05-24)\n\n"
+    "## 1. TL;DR\nA fake response.\n\n"
+    "## 2. 当前状态\n- ✅ done\n\n"
+    "## 3. 下一步立即要做的事\n**优先级 1**: x\n\n"
+    "## 4. 关键决策记录\n- foo → why\n\n"
+    "## 5. 文件结构 / 入口\n- file.py\n\n"
+    "## 6. 已知坑 / 待办\n- ⚠️ y\n"
+)
 
-    def __init__(self, response: str = ""):
-        self.response = response or (
-            "# HANDOFF — test (2026-05-24)\n\n"
-            "## 1. TL;DR\nA fake response.\n\n"
-            "## 2. 当前状态\n- ✅ done\n\n"
-            "## 3. 下一步立即要做的事\n**优先级 1**: x\n\n"
-            "## 4. 关键决策记录\n- foo → why\n\n"
-            "## 5. 文件结构 / 入口\n- file.py\n\n"
-            "## 6. 已知坑 / 待办\n- ⚠️ y\n"
-        )
+
+class _StubProvider:
+    """Fake LLM that captures the prompt and returns a canned 6-block body.
+
+    Pass ``response=None`` to use the default canned 6-block response.
+    Pass any string (including ``""`` or whitespace) verbatim — useful for
+    testing the empty-response fallback path.
+    """
+
+    def __init__(self, response: str | None = None):
+        self.response = _DEFAULT_STUB_RESPONSE if response is None else response
         self.captured: dict[str, str] = {}
 
     def complete(self, *, system: str, user: str, model: str | None = None) -> str:
@@ -173,6 +181,22 @@ def test_generate_handoff_uses_llm_when_provided(isolated_root: Path, tmp_path: 
     # System prompt mandates 6 blocks + anti-patterns
     assert "6 区块" in llm.captured["system"]
     assert "反模式" in llm.captured["system"]
+
+
+def test_generate_handoff_falls_back_when_llm_returns_empty(isolated_root: Path, tmp_path: Path):
+    """LLM returning empty / whitespace must not silently overwrite HANDOFF with nothing."""
+    project = tmp_path / "p"
+    project.mkdir()
+    for raw in ("", "   ", "\n\n", "\t"):
+        result = generate_handoff(
+            cwd=project,
+            scope_hash="abc123",
+            data_root=isolated_root,
+            with_llm=True,
+            llm=_StubProvider(response=raw),
+        )
+        assert result["used_llm"] is False, f"empty raw={raw!r} should fall back"
+        assert "fallback 模板" in result["content"]
 
 
 def test_generate_handoff_falls_back_when_llm_raises(isolated_root: Path, tmp_path: Path):

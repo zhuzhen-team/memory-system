@@ -63,8 +63,11 @@ memoryd handoff write
 memoryd handoff write --snapshot
 # → 产出 HANDOFF-2026-05-24.md，HANDOFF.md 不动
 
-# 强制覆盖
+# 强制覆盖现有 HANDOFF.md
 memoryd handoff write --force
+
+# 写到任意路径（escape hatch；不会触发 SessionStart 自动注入，仅用作快速预览 / 别处存档）
+memoryd handoff write --out=/tmp/handoff-preview.md
 
 # 不调 LLM，纯素材结构化输出（无 LLM 费用、离线可用）
 memoryd handoff write --no-llm
@@ -79,6 +82,11 @@ memoryd handoff read --date=2026-05-20    # 读历史快照
 # 列项目根的所有 HANDOFF
 memoryd handoff list
 ```
+
+!!! tip "`--out` vs `--snapshot` vs 默认"
+    - **默认**：写 `<cwd>/HANDOFF.md`。这是唯一会被 SessionStart inject 自动注入的位置
+    - **`--snapshot`**：写 `<cwd>/HANDOFF-YYYY-MM-DD.md`，留作历史归档。不替换 canonical 版本
+    - **`--out=<path>`**：写到任意路径。**不会**被 inject 拾取——纯属"我想到桌面看一下"或"放到 Drive 里给别人"用
 
 ## SessionStart 自动读 HANDOFF
 

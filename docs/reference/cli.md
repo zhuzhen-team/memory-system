@@ -184,8 +184,11 @@ memoryd handoff list  [--cwd=<path>]
 
 - **write**：从最近 N 天 decision / warning / session / identity 抽信号，调 LLM
   按 6 区块（TL;DR / 当前状态 / 下一步 / 关键决策 / 文件结构 / 已知坑）生成 HANDOFF.md。
-  默认写 `<cwd>/HANDOFF.md`，已存在时拒绝覆盖（要 `--force`），`--snapshot` 会
-  写 `HANDOFF-YYYY-MM-DD.md` 不动 canonical 版本。`--no-llm` 走纯结构化 fallback（无费用）。
+  - 默认写 `<cwd>/HANDOFF.md`，已存在时拒绝覆盖（要 `--force`）
+  - `--snapshot` 写 `HANDOFF-YYYY-MM-DD.md` 不动 canonical 版本（适合"工作日结束 + 留底"）
+  - `--out=<path>` 写到任意路径（适合"快速预览到 /tmp / 桌面"，不会触发 SessionStart 自动注入）
+  - `--no-llm` 走纯结构化 fallback（无 LLM 费用，离线可用，但缺凝练，需手动调整）
+  - `--scope=auto`（默认）= 用 cwd 派生的 scope_hash；`--global` = 跨 scope 聚合
 - **read**：打印 cwd 的 HANDOFF.md；`--date` 读历史快照。
 - **list**：列项目根所有 HANDOFF 系列文件。
 

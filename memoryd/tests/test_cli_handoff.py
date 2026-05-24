@@ -80,6 +80,29 @@ def test_handoff_write_force_overwrites(env_setup: Path):
     assert "HANDOFF — myproj" in (env_setup / "HANDOFF.md").read_text()
 
 
+def test_handoff_write_out_path_outside_cwd(env_setup: Path, tmp_path: Path):
+    """--out is a deliberate escape hatch: writes to an arbitrary path, even outside cwd.
+
+    Documented behavior. We do NOT constrain --out to live under cwd because users
+    legitimately want to dump HANDOFF to /tmp, ~/Desktop, etc. for quick review.
+    The HANDOFF.md convention (project root) is enforced by the *default* (cwd/HANDOFF.md),
+    not by sandboxing --out.
+    """
+    elsewhere = tmp_path / "elsewhere" / "scratch.md"
+    elsewhere.parent.mkdir(parents=True, exist_ok=True)
+    proc = _run_cli([
+        "handoff", "write",
+        "--cwd", str(env_setup),
+        "--no-llm",
+        "--out", str(elsewhere),
+    ])
+    assert proc.returncode == 0, proc.stderr
+    assert elsewhere.exists()
+    assert "HANDOFF — myproj" in elsewhere.read_text(encoding="utf-8")
+    # Default location not touched
+    assert not (env_setup / "HANDOFF.md").exists()
+
+
 def test_handoff_write_snapshot_dated_file(env_setup: Path):
     """--snapshot writes HANDOFF-YYYY-MM-DD.md alongside (not over) HANDOFF.md."""
     (env_setup / "HANDOFF.md").write_text("# existing\n", encoding="utf-8")

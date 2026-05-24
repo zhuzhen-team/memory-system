@@ -38,7 +38,12 @@ from .notify import SMTPConfig
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "llm": {
-        "provider": "anthropic",
+        # claude-code provider spawns a `claude -p` subprocess and reuses the
+        # user's existing Claude Code login. Zero API key needed — this is the
+        # default because most memoryd users already run Claude Code locally.
+        # Override via config.toml or `memoryd config set llm.provider anthropic`
+        # if you want direct Anthropic SDK + ANTHROPIC_API_KEY instead.
+        "provider": "claude-code",
         "model": "claude-haiku-4-5",
         "api_key_env": "ANTHROPIC_API_KEY",
         "request_timeout_sec": 30,

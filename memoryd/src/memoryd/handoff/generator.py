@@ -191,14 +191,19 @@ def _render_fallback_markdown(
     Doesn't follow the 6-block structure as strictly as the LLM output —
     explicitly labels itself as a fallback so the reader knows to revise.
     """
+    # Fallback intentionally drops the 1./2./.../6. numbering: without LLM
+    # synthesis we cannot guarantee all six blocks are populated, so
+    # half-numbered output (1, 4, 6) would just look broken. We label each
+    # section by name and let the reader (or a follow-up LLM pass) re-shape.
     parts = [
         f"# HANDOFF — {project_name} ({today_iso})",
         "",
         "> ⚠️ 这是 **fallback 模板**（LLM 不可用或 --no-llm 模式）。",
-        "> 它把素材原样列出，没有经过 LLM 凝练。装好 LLM 后用 `memoryd handoff write` 重新生成。",
+        "> 它把素材原样列出，没有经过 LLM 凝练。装好 LLM 后用 `memoryd handoff write` 重新生成 6 区块版。",
+        "> 提示：用 `memoryd doctor` 看 LLM provider 状态；新装环境可直接走 `claude-code` provider（复用 CC 订阅，零 API key）。",
         "",
-        "## 1. TL;DR",
-        "（需手填或重跑带 LLM 的 `handoff write`）",
+        "## TL;DR",
+        "（fallback 模板未生成；请手填或重跑带 LLM 的 `handoff write`）",
         "",
     ]
 
@@ -211,7 +216,7 @@ def _render_fallback_markdown(
 
     decisions = signals.get("decisions", [])
     if decisions:
-        parts.append("## 4. 关键决策记录（原始 decisions）")
+        parts.append("## 关键决策记录（原始 decisions）")
         for d in decisions:
             date = (d.get("created_at") or "")[:10]
             title = d.get("title") or d.get("slug") or "?"
@@ -220,7 +225,7 @@ def _render_fallback_markdown(
 
     warnings = signals.get("warnings", [])
     if warnings:
-        parts.append("## 6. 已知坑 / 待办（原始 warnings）")
+        parts.append("## 已知坑 / 待办（原始 warnings）")
         for w in warnings:
             date = (w.get("created_at") or "")[:10]
             title = w.get("title") or w.get("slug") or "?"
@@ -362,6 +367,22 @@ def generate_handoff(
         }
 
     content = (raw or "").strip()
+    # Empty / whitespace-only LLM response is treated as a failure path so we
+    # don't silently overwrite an existing HANDOFF.md with nothing. Triggers:
+    # quota-throttled responses, safety-filtered outputs, network race.
+    if not content:
+        return {
+            "content": _render_fallback_markdown(
+                project_name=project_name,
+                today_iso=today_iso,
+                signals=signals,
+            ),
+            "project_name": project_name,
+            "today_iso": today_iso,
+            "used_llm": False,
+            "signals_summary": summary,
+        }
+
     # Strip ```markdown wrappers if the LLM added them despite instructions
     if content.startswith("```"):
         lines = content.splitlines()

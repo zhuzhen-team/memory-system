@@ -323,6 +323,9 @@ def render_session_context(
     root = data_root or _data_root()
 
     # Auto-detect project cwd from CC env if caller didn't pass it.
+    # The CLI handler (cmd_inject) always passes ``cwd`` explicitly; this
+    # block is the safety net for direct programmatic callers (tests, MCP
+    # tools, future integrations) that don't resolve cwd themselves.
     if cwd is None:
         env_cwd = os.environ.get("CLAUDE_PROJECT_DIR")
         if env_cwd:

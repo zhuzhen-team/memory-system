@@ -249,18 +249,28 @@ def cmd_inject(args: argparse.Namespace) -> int:
     """
     from .inject import render_session_context
 
+    # Resolve cwd once for both scope derivation and HANDOFF lookup —
+    # otherwise render_session_context auto-detects again, duplicating work
+    # and creating two sources of truth.
+    raw_cwd = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    cwd_path: Path | None
+    try:
+        cwd_path = Path(raw_cwd).resolve()
+    except OSError:
+        cwd_path = None
+
     scope = args.scope
-    # `--scope=auto` is shorthand for "infer from CLAUDE_PROJECT_DIR / cwd"
-    # so SessionStart hooks don't have to plumb scope_hash themselves.
-    cwd_path: Path | None = None
     if scope == "auto":
-        raw_cwd = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-        try:
-            cwd_path = Path(raw_cwd).resolve()
-            scope = scope_hash(resolve_scope_root(cwd_path))
-        except OSError:
-            # broken symlink / unresolvable path → fall back to global scope
+        # `--scope=auto` is shorthand for "infer from CLAUDE_PROJECT_DIR / cwd"
+        # so SessionStart hooks don't have to plumb scope_hash themselves.
+        if cwd_path is None:
             scope = None
+        else:
+            try:
+                scope = scope_hash(resolve_scope_root(cwd_path))
+            except OSError:
+                # broken symlink / unresolvable path → fall back to global scope
+                scope = None
     elif scope in ("", "global", "_global"):
         scope = None
 
