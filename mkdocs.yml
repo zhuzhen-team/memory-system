@@ -83,14 +83,16 @@ nav:
   - 首页: index.md
 
   - 给用户:
-    - 让 AI 帮你装: user/install-via-ai.md
-    - LLM provider 选项: user/llm-providers.md
-    - 复用 Claude Code: user/reusing-claude-code.md
-    - 5 分钟开始: getting-started/quickstart.md
-    - 项目概览: getting-started/overview.md
-    - 详细安装: getting-started/installation.md
-    - 首次运行: getting-started/first-run.md
-    - 核心概念: getting-started/concepts.md
+    - 安装与上手:
+      - 让 AI 帮你装: user/install-via-ai.md
+      - 5 分钟开始: getting-started/quickstart.md
+      - 详细安装: getting-started/installation.md
+      - 项目概览: getting-started/overview.md
+      - 首次运行: getting-started/first-run.md
+      - 核心概念: getting-started/concepts.md
+    - LLM 配置:
+      - LLM provider 选项: user/llm-providers.md
+      - 复用 Claude Code: user/reusing-claude-code.md
     - 使用教程:
       - 教程入口: tutorials/index.md
       - 第一次记忆: tutorials/first-memory.md
@@ -113,7 +115,8 @@ nav:
       - 健康检查: operations/health-check.md
       - 故障排查: operations/troubleshooting.md
       - 卸载: operations/uninstall.md
-    - FAQ: faq.md
+    - 常见问题:
+      - FAQ: faq.md
 
   - 给开发者:
     - 架构:

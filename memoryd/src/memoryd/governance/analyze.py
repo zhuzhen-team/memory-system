@@ -119,15 +119,43 @@ def analyze_session(
             return
         candidates = parse_candidates(raw)
 
+        # Read auto-promote / auto-reject thresholds from config.
+        # Default behaviour ("autonomous"): DURA avg >= 0.85 auto-promote,
+        # < 0.5 auto-reject, 0.5..0.85 stays pending for manual review.
+        # Disable auto-promote: set governance.auto_promote_threshold = 1.1
+        try:
+            from ..config import load_config as _load_cfg
+            _gov_cfg = (_load_cfg() or {}).get("governance", {}) or {}
+            _auto_promote_th = float(_gov_cfg.get("auto_promote_threshold", 0.85))
+            _auto_reject_th = float(_gov_cfg.get("auto_reject_threshold", 0.5))
+        except Exception:  # noqa: BLE001
+            _auto_promote_th, _auto_reject_th = 0.85, 0.5
+
+        def _dura_avg(dura: dict) -> float:
+            try:
+                vals = [float(v) for v in dura.values() if isinstance(v, (int, float))]
+                return sum(vals) / len(vals) if vals else 0.0
+            except Exception:  # noqa: BLE001
+                return 0.0
+
         now = datetime.now(timezone.utc).isoformat()
+        auto_promoted_ids: list[int] = []
         for c in candidates:
-            idx.conn.execute(
+            dura = c.get("dura") or {}
+            avg = _dura_avg(dura)
+            # Auto-reject: skip insert entirely.
+            if avg < _auto_reject_th:
+                continue
+            # Determine initial status: auto-approved if >= threshold.
+            initial_status = "approved" if avg >= _auto_promote_th else "pending"
+            decided_at = now if initial_status == "approved" else None
+            cur = idx.conn.execute(
                 """
                 INSERT INTO promotions (
                   source_session_slug, proposed_type, proposed_title,
                   proposed_body, proposed_triggers, dura_score, reasoning,
-                  proposed_supersedes, scope_hash, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                  proposed_supersedes, scope_hash, status, created_at, decided_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_slug,
@@ -135,14 +163,29 @@ def analyze_session(
                     c["title"][:200],
                     c["body"][:5000],
                     json.dumps(c.get("triggers", [])),
-                    json.dumps(c["dura"]),
+                    json.dumps(dura),
                     c.get("reasoning", "")[:500],
                     json.dumps(c.get("supersedes", [])),
                     scope_hash,
+                    initial_status,
                     now,
+                    decided_at,
                 ),
             )
+            if initial_status == "approved":
+                auto_promoted_ids.append(cur.lastrowid)
         idx.conn.commit()
+
+        # Materialize auto-promoted rows: write the long-term .md files.
+        # approve_promotion uses its own sqlite3 conn, so close+reopen ours.
+        if auto_promoted_ids:
+            idx.close()
+            for pid in auto_promoted_ids:
+                try:
+                    approve_promotion(memory_root, pid)
+                except Exception:  # noqa: BLE001 — best-effort
+                    pass
+            idx = open_index(memory_root / "index.db")
 
         # === KG extraction: best-effort, never raises ===
         # Extract entities + relations from the session body and write them into

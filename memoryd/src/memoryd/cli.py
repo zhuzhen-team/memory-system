@@ -634,6 +634,144 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_uninstall_all(args: argparse.Namespace) -> int:
+    """Reverse everything `setup auto-install` did.
+
+    Removes:
+      * 4 cron LaunchAgents (decay / digest / weekly_identity / monthly_report)
+      * launchd mirror
+      * CC SessionStart + SessionEnd hooks from ~/.claude/settings.json
+      * Codex notify wrapper (restore original via swap --to original)
+      * Codex AGENTS.md memoryd block
+      * MCP server registration in ~/.claude.json (memoryd entry)
+
+    Does NOT touch:
+      * The data dir ~/.local/share/memoryd/  (memories stay; delete by hand)
+      * ~/.config/memoryd/config.toml (settings stay)
+      * The cloned repo or .venv
+
+    Idempotent: missing items skipped silently.
+    """
+    import json as _json
+    results: dict = {}
+
+    # --- cron jobs ---
+    from .setup_cron import _JOBS, uninstall as _uninstall_cron
+    for key in list(_JOBS):
+        try:
+            _uninstall_cron(key)
+            results[f"{key}_cron"] = "uninstalled"
+        except Exception as exc:  # noqa: BLE001
+            results[f"{key}_cron_error"] = str(exc)
+
+    # --- launchd mirror ---
+    try:
+        from .setup import uninstall_launchd_mirror
+        removed = uninstall_launchd_mirror(launch_dir=Path.home() / "Library" / "LaunchAgents")
+        results["launchd_mirror"] = "removed" if removed else "absent"
+    except Exception as exc:  # noqa: BLE001
+        results["launchd_mirror_error"] = str(exc)
+
+    # --- CC hooks ---
+    try:
+        cc_settings = Path.home() / ".claude" / "settings.json"
+        if cc_settings.exists():
+            data = _json.loads(cc_settings.read_text(encoding="utf-8"))
+            hooks = data.get("hooks") or {}
+            for event in ("SessionEnd", "SessionStart"):
+                if event in hooks:
+                    hooks[event] = [
+                        m for m in hooks[event]
+                        if not any(
+                            "memoryd" in (h.get("command") or "") or
+                            "plugins/claude-code/session" in (h.get("command") or "")
+                            for h in (m.get("hooks") or [])
+                        )
+                    ]
+                    if not hooks[event]:
+                        del hooks[event]
+            if hooks:
+                data["hooks"] = hooks
+            else:
+                data.pop("hooks", None)
+            cc_settings.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            results["cc_hooks"] = "removed memoryd hook entries"
+        else:
+            results["cc_hooks_skipped"] = "~/.claude/settings.json absent"
+    except Exception as exc:  # noqa: BLE001
+        results["cc_hooks_error"] = str(exc)
+
+    # --- Codex notify (restore original) ---
+    try:
+        from .setup import swap_codex_notify
+        codex_dir = Path.home() / ".codex"
+        if (codex_dir / "config.toml").exists() and (codex_dir / ".memoryd-notify-state.json").exists():
+            swap_codex_notify(
+                to="original",
+                codex_dir=codex_dir,
+                backup_dir=Path.home() / ".claude" / "backups",
+                probe_path="",
+                wrapper_path="",
+            )
+            results["codex_notify"] = "restored original"
+        else:
+            results["codex_notify_skipped"] = "no swap-state to restore"
+    except Exception as exc:  # noqa: BLE001
+        results["codex_notify_error"] = str(exc)
+
+    # --- Codex AGENTS.md memoryd block ---
+    try:
+        from .codex_agents import uninstall_codex_agents_include
+        removed = uninstall_codex_agents_include()
+        results["codex_agents_include"] = "removed" if removed else "absent"
+    except Exception as exc:  # noqa: BLE001
+        results["codex_agents_include_error"] = str(exc)
+
+    # --- MCP server registration ---
+    try:
+        cc_json = Path.home() / ".claude.json"
+        if cc_json.exists():
+            data = _json.loads(cc_json.read_text(encoding="utf-8"))
+            servers = data.get("mcpServers") or {}
+            if "memoryd" in servers:
+                del servers["memoryd"]
+                cc_json.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                results["mcp_registration"] = "removed"
+            else:
+                results["mcp_registration_skipped"] = "no memoryd MCP entry"
+        else:
+            results["mcp_registration_skipped"] = "~/.claude.json absent"
+    except Exception as exc:  # noqa: BLE001
+        results["mcp_registration_error"] = str(exc)
+
+    print(_json.dumps(results, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_install_codex_agents_include(args: argparse.Namespace) -> int:
+    """Refresh ~/.codex/AGENTS.md memoryd block — Codex now sees identity."""
+    from .codex_agents import install_codex_agents_include
+    try:
+        out = install_codex_agents_include()
+    except Exception as exc:  # noqa: BLE001
+        print(f"install-codex-agents-include: {exc}", file=sys.stderr)
+        return 1
+    print(f"refreshed memoryd block in {out}", file=sys.stderr)
+    return 0
+
+
+def _cmd_uninstall_codex_agents_include(args: argparse.Namespace) -> int:
+    """Strip the memoryd block from ~/.codex/AGENTS.md."""
+    from .codex_agents import uninstall_codex_agents_include
+    removed = uninstall_codex_agents_include()
+    print(
+        "removed memoryd block from ~/.codex/AGENTS.md" if removed
+        else "no memoryd block found (already clean)",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _cmd_install_memory_searcher(args: argparse.Namespace) -> int:
     try:
         out = setup_mod.install_memory_searcher(
@@ -2092,6 +2230,25 @@ def main() -> int:
     )
     p_ims.add_argument("--force", action="store_true")
     p_ims.set_defaults(func=_cmd_install_memory_searcher)
+
+    # install-codex-agents-include — auto-inject identity into ~/.codex/AGENTS.md
+    p_cai = setup_subs.add_parser(
+        "install-codex-agents-include",
+        help="把 memoryd identity + top entities + 最近决策注入到 ~/.codex/AGENTS.md（Codex 自动读 = 每次会话有上下文）",
+    )
+    p_cai.set_defaults(func=_cmd_install_codex_agents_include)
+
+    p_uci = setup_subs.add_parser(
+        "uninstall-codex-agents-include",
+        help="从 ~/.codex/AGENTS.md 撤掉 memoryd 自动注入区段",
+    )
+    p_uci.set_defaults(func=_cmd_uninstall_codex_agents_include)
+
+    p_uall = setup_subs.add_parser(
+        "uninstall-all",
+        help="一键撤销所有 auto-install 装的东西（cron + hooks + codex + mcp + launchd mirror）。不删数据。",
+    )
+    p_uall.set_defaults(func=_cmd_uninstall_all)
 
     # `doctor` — single-command health check. Top-level (not under `setup`) so
     # users can find it without knowing where to look.

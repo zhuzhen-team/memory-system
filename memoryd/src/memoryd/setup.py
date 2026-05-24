@@ -331,6 +331,18 @@ def auto_install() -> dict:
     except Exception as e:  # noqa: BLE001
         results["cc_session_start_hook_error"] = str(e)
 
+    # ---- Codex AGENTS.md auto-include (refresh memoryd identity block) ----
+    try:
+        codex_dir_path = Path.home() / ".codex"
+        if codex_dir_path.exists():
+            from .codex_agents import install_codex_agents_include
+            out = install_codex_agents_include(codex_dir=codex_dir_path)
+            results["codex_agents_include"] = str(out)
+        else:
+            results["codex_agents_include_skipped"] = "codex not installed (~/.codex/ missing)"
+    except Exception as e:  # noqa: BLE001
+        results["codex_agents_include_error"] = str(e)
+
     # ---- Codex notify wrapper (auto-detect if codex is installed) ----
     try:
         codex_dir = Path.home() / ".codex"

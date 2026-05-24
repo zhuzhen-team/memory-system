@@ -96,13 +96,18 @@ def test_parse_candidates_filters_below_threshold():
 
 
 def test_analyze_session_writes_promotion(memory_root: Path):
+    """High DURA (avg >= 0.85) auto-promotes to status='approved'.
+
+    This is the autonomous-by-default behaviour: the user trusts the LLM
+    enough at this confidence to skip manual approval.
+    """
     sess = _build_session_in_root(memory_root)
     fake = _FakeLLM(json.dumps([{
         "type": "decision",
         "title": "use deep blue for logo",
         "body": "decided deep blue + silver-gray",
         "triggers": ["logo", "blue"],
-        "dura": {"D": 0.9, "U": 0.9, "R": 0.85, "A": 0.95},
+        "dura": {"D": 0.9, "U": 0.9, "R": 0.85, "A": 0.95},  # avg 0.9 → auto
         "reasoning": "user explicit",
         "supersedes": [],
     }]))
@@ -115,7 +120,48 @@ def test_analyze_session_writes_promotion(memory_root: Path):
     assert len(rows) == 1
     assert rows[0][0] == "decision"
     assert rows[0][1] == "use deep blue for logo"
-    assert rows[0][2] == "pending"
+    assert rows[0][2] == "approved"  # was 'pending' pre-autonomous-default
+
+
+def test_analyze_session_gray_zone_stays_pending(memory_root: Path):
+    """Moderate DURA (0.5..0.85) writes status='pending' for manual review."""
+    sess = _build_session_in_root(memory_root)
+    fake = _FakeLLM(json.dumps([{
+        "type": "fact",
+        "title": "tentative observation",
+        "body": "maybe a pattern",
+        "triggers": ["maybe"],
+        "dura": {"D": 0.7, "U": 0.7, "R": 0.6, "A": 0.6},  # avg 0.65 → pending
+        "reasoning": "moderate signal",
+        "supersedes": [],
+    }]))
+    analyze_session(memory_root, session_slug=sess.frontmatter.slug, provider=fake)
+    from memoryd.index import open_index
+    idx = open_index(memory_root / "index.db")
+    rows = idx.conn.execute("SELECT proposed_type, status FROM promotions").fetchall()
+    idx.close()
+    assert len(rows) == 1
+    assert tuple(rows[0]) == ("fact", "pending")
+
+
+def test_analyze_session_low_dura_auto_rejects(memory_root: Path):
+    """Very low DURA (< 0.5) is dropped entirely (no row inserted)."""
+    sess = _build_session_in_root(memory_root)
+    fake = _FakeLLM(json.dumps([{
+        "type": "preference",
+        "title": "noisy",
+        "body": "low signal",
+        "triggers": [],
+        "dura": {"D": 0.3, "U": 0.4, "R": 0.4, "A": 0.5},  # avg 0.4 → reject
+        "reasoning": "",
+        "supersedes": [],
+    }]))
+    analyze_session(memory_root, session_slug=sess.frontmatter.slug, provider=fake)
+    from memoryd.index import open_index
+    idx = open_index(memory_root / "index.db")
+    rows = idx.conn.execute("SELECT COUNT(*) FROM promotions").fetchall()
+    idx.close()
+    assert rows[0][0] == 0
 
 
 def test_analyze_session_skips_when_session_not_found(memory_root: Path):
