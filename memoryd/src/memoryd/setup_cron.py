@@ -66,6 +66,18 @@ _JOBS = {
         "linux_timer": "systemd-monthly-report.timer.j2",
         "windows_template": "windows-monthly-report.xml.j2",
     },
+    "sync_push": {
+        # Daily cross-device sync. Runs `memoryd sync export` against the
+        # configured sync.dir (a Dropbox/iCloud/Syncthing folder). 03:30
+        # local time — sits just after decay-sweep so each push captures
+        # any state changes from that pass.
+        "label": "com.memoryd.sync-push",
+        "schedule": CronSchedule(hour=3, minute=30),
+        "macos_template": "launchd-sync-push.plist.j2",
+        "linux_service": "systemd-sync-push.service.j2",
+        "linux_timer": "systemd-sync-push.timer.j2",
+        "windows_template": "windows-sync-push.xml.j2",
+    },
 }
 
 

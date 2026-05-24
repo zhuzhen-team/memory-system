@@ -414,6 +414,8 @@ def _cmd_install_cron(args: argparse.Namespace) -> int:
         keys.append("weekly_identity")
     if args.all or getattr(args, "monthly_report", False):
         keys.append("monthly_report")
+    if args.all or getattr(args, "sync_push", False):
+        keys.append("sync_push")
     # dedupe preserving order
     keys = list(dict.fromkeys(keys))
     if not keys:
@@ -441,11 +443,13 @@ def _cmd_uninstall_cron(args: argparse.Namespace) -> int:
         keys.append("weekly_identity")
     if args.all or getattr(args, "monthly_report", False):
         keys.append("monthly_report")
+    if args.all or getattr(args, "sync_push", False):
+        keys.append("sync_push")
     keys = list(dict.fromkeys(keys))
     if not keys:
         print(
             "uninstall-cron: pass --decay / --digest / --weekly-identity / "
-            "--monthly-report / --task=<name> / --all",
+            "--monthly-report / --sync-push / --task=<name> / --all",
             file=sys.stderr,
         )
         return 2
@@ -1479,6 +1483,43 @@ def _cmd_sync_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sync_bundle(args: argparse.Namespace) -> int:
+    """Pack data root into a single ``tar.gz`` for migration / backup."""
+    from .sync.bundle import bundle as _bundle, format_stats
+    try:
+        stats = _bundle(
+            out=args.out,
+            include_encrypted=getattr(args, "include_encrypted", False),
+        )
+    except FileNotFoundError as exc:
+        print(f"sync bundle: {exc}", file=sys.stderr)
+        return 1
+    print(format_stats(stats, action="bundled"), file=sys.stderr)
+    return 0
+
+
+def _cmd_sync_restore(args: argparse.Namespace) -> int:
+    """Restore a ``sync bundle`` tar.gz into the data root."""
+    from .sync.bundle import restore as _restore, format_stats
+    try:
+        stats = _restore(src=args.src, force=args.force)
+    except FileNotFoundError as exc:
+        print(f"sync restore: {exc}", file=sys.stderr)
+        return 1
+    except FileExistsError as exc:
+        print(f"sync restore: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"sync restore: {exc}", file=sys.stderr)
+        return 2
+    print(format_stats(stats, action="restored"), file=sys.stderr)
+    print(
+        "\n下一步：跑 `memoryd setup auto-install` 重新挂三端 hook + cron + MCP。",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _cmd_sync_status(args: argparse.Namespace) -> int:
     from .sync import expand_sync_dir, status
     from .config import load_config
@@ -2152,6 +2193,8 @@ def main() -> int:
     )
     p_inst_cron.add_argument("--decay", action="store_true")
     p_inst_cron.add_argument("--digest", action="store_true")
+    p_inst_cron.add_argument("--sync-push", action="store_true",
+                             help="daily sync to configured sync.dir at 03:30")
     p_inst_cron.add_argument(
         "--weekly-identity",
         action="store_true",
@@ -2176,6 +2219,7 @@ def main() -> int:
     p_un_cron = setup_subs.add_parser("uninstall-cron", help="uninstall cron jobs")
     p_un_cron.add_argument("--decay", action="store_true")
     p_un_cron.add_argument("--digest", action="store_true")
+    p_un_cron.add_argument("--sync-push", action="store_true")
     p_un_cron.add_argument(
         "--weekly-identity",
         action="store_true",
@@ -2444,6 +2488,32 @@ def main() -> int:
     p_sst = sync_subs.add_parser("status", help="show per-scope sync counts")
     p_sst.add_argument("--json", action="store_true", dest="as_json")
     p_sst.set_defaults(func=_cmd_sync_status)
+
+    # `sync bundle` — single-file portable snapshot for device migration / backup
+    p_sb = sync_subs.add_parser(
+        "bundle",
+        help="打包整个 memoryd 数据（markdown + identity + index.db）成一个 tar.gz —— 跨设备 / 备份用",
+    )
+    p_sb.add_argument(
+        "--out", type=Path, default=None,
+        help="输出路径；默认 ~/Desktop/memoryd-snapshot-YYYY-MM-DD-HHMMSS.tar.gz",
+    )
+    p_sb.add_argument(
+        "--include-encrypted", action="store_true",
+        help="也含 .md.enc（默认跳过，因为加密 key 在 OS keychain 跨机不可用）",
+    )
+    p_sb.set_defaults(func=_cmd_sync_bundle)
+
+    p_sr = sync_subs.add_parser(
+        "restore",
+        help="把 sync bundle tar.gz 解压到 memoryd 数据根目录（新机迁移 / 灾难恢复）",
+    )
+    p_sr.add_argument("--from", dest="src", type=Path, required=True, help="bundle tar.gz 路径")
+    p_sr.add_argument(
+        "--force", action="store_true",
+        help="数据根非空时强制覆盖（默认拒绝以保护现有数据）",
+    )
+    p_sr.set_defaults(func=_cmd_sync_restore)
 
     p_pp = subs.add_parser(
         "set-passphrase",

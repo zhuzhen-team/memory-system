@@ -44,6 +44,11 @@ AGENT_TOOLS = {
     "mem_capture_passive",
     "mem_judge",
     "mem_compare",
+    # Promotion-review tools — let CC walk the user through pending triage
+    # without leaving the conversation. See mcp_tools/promotions.py.
+    "mem_review_pending",
+    "mem_promote",
+    "mem_reject",
 }
 ADMIN_TOOLS = set(ADMIN_TOOL_NAMES)
 ALL_TOOLS = AGENT_TOOLS | ADMIN_TOOLS
@@ -80,7 +85,8 @@ async def test_admin_tier_when_env_set(monkeypatch: pytest.MonkeyPatch) -> None:
     mcp = build_server()
     names = set(await list_tool_names(mcp))
     assert names == ALL_TOOLS
-    assert len(names) == 19
+    # 16 agent (13 original + 3 promotion-review) + 6 admin
+    assert len(names) == 22
 
 
 @pytest.mark.asyncio

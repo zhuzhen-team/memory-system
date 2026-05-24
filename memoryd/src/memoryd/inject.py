@@ -30,6 +30,49 @@ _DEFAULT_RECENT_TYPES: tuple[str, ...] = ("decision", "preference", "fact")
 _EMPTY_FALLBACK = "_(memoryd 未启用 / 数据为空)_"
 
 
+def _grey_zone_preview(data_root: Path, limit: int = 5) -> list[dict[str, Any]]:
+    """Return up to ``limit`` pending promotions, lowest DURA-avg first.
+
+    Used by SessionStart inject when there are few enough pending entries to
+    show each one inline (so the agent / user can act without leaving the
+    conversation). Returns [] on any error — inject must never fail.
+    """
+    db = data_root / "index.db"
+    if not db.exists():
+        return []
+    import json as _json
+    try:
+        conn = sqlite3.connect(str(db))
+        try:
+            rows = conn.execute(
+                "SELECT id, proposed_type, proposed_title, dura_score "
+                "FROM promotions WHERE status='pending' "
+                "ORDER BY created_at DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — best-effort, inject must not raise
+        return []
+
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            dura = _json.loads(row[3] or "{}")
+        except (TypeError, _json.JSONDecodeError):
+            dura = {}
+        vals = [float(v) for v in dura.values() if isinstance(v, (int, float))]
+        avg = round(sum(vals) / len(vals), 3) if vals else 0.0
+        enriched.append({
+            "id": row[0],
+            "type": row[1],
+            "title": row[2],
+            "dura_avg": avg,
+        })
+    # Lowest avg first — that's where user judgment matters most.
+    enriched.sort(key=lambda r: r["dura_avg"])
+    return enriched[:limit]
+
+
 def _data_root() -> Path:
     """Mirror cli._data_root so this module can be imported standalone."""
     override = os.environ.get("MEMORYD_DATA_ROOT")
@@ -305,13 +348,29 @@ def render_session_context(
             parts.append(trends_line)
             parts.append("")
 
-        if pending_count >= 5:
-            parts.append(
-                f"**有 {pending_count} 条待审批记忆**（DURA 评分通过等你过最后一关）—— "
-                "跟我说"
-                "「列出 pending memories 帮我批 / 批准全部高分」"
-                "或终端跑 `memoryd promote --auto-high` / `memoryd digest --tui`（按 `a` 一键批全部）"
-            )
+        if pending_count >= 1:
+            # 灰区少（≤5）时直接展开预览，CC 可以一句话帮你过；
+            # 灰区多时只提示数字 + 引导，避免淹没 inject 段。
+            preview_rows = _grey_zone_preview(root, limit=5) if pending_count <= 8 else []
+            if preview_rows:
+                parts.append(
+                    f"**待审批记忆 {pending_count} 条**（DURA 评分通过等你判断）："
+                )
+                for r in preview_rows:
+                    avg = r.get("dura_avg", 0.0)
+                    title = (r.get("title") or "")[:60]
+                    parts.append(f"- `#{r['id']}` [{r['type']}] avg={avg:.2f} {title}")
+                parts.append(
+                    "→ 对我说「过一遍 pending」我用 mem_review_pending 列详情、"
+                    "「批 #X #Y」/「拒 #Z」逐个处理；"
+                    "或「批所有高分」一句话过完"
+                )
+            else:
+                parts.append(
+                    f"**有 {pending_count} 条待审批记忆**（DURA 评分通过等你过最后一关）—— "
+                    "对我说「过一遍 pending」我帮你列出来逐个处理；"
+                    "或「批所有高分」直接批 DURA≥0.85 的"
+                )
             parts.append("")
 
         return "\n".join(parts).rstrip() + "\n"

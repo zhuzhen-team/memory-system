@@ -838,11 +838,62 @@ def run_all_checks(*, data_root: Path | None = None) -> list[CheckResult]:
         check_launchd_cron("digest", launchctl_output=launchctl_out),
         check_launchd_cron("weekly_identity", launchctl_output=launchctl_out),
         check_launchd_cron("monthly_report", launchctl_output=launchctl_out),
+        check_sync_setup(launchctl_output=launchctl_out),
         check_llm_provider(),
         check_mcp_registered(),
         check_recent_capture(root),
     ]
     return results
+
+
+def check_sync_setup(*, launchctl_output: str | None = None) -> CheckResult:
+    """Cross-device sync: is sync.dir configured + sync_push cron loaded?
+
+    Three states:
+      * OK   — sync.dir set AND sync_push launchd loaded
+      * INFO — sync.dir unset (single-device user, that's fine)
+      * WARN — sync.dir set but cron not loaded (config drift / install gap)
+    """
+    try:
+        from .config import load_config as _load_cfg
+        cfg = _load_cfg() or {}
+        sync_dir = cfg.get("sync", {}).get("dir") if isinstance(cfg, dict) else None
+        if not sync_dir and hasattr(cfg, "sync"):
+            sync_dir = getattr(cfg.sync, "dir", None)
+    except Exception:  # noqa: BLE001
+        sync_dir = None
+
+    if not sync_dir:
+        return CheckResult(
+            "sync_setup",
+            "sync (cross-device)",
+            "info",
+            "sync.dir 未配置（单设备使用，无需）",
+            hint=(
+                "想跨设备：`memoryd config set sync.dir ~/Dropbox/memoryd` "
+                "然后 `memoryd setup auto-install` 装日跑 cron"
+            ),
+        )
+
+    # sync.dir configured — check that sync_push cron is loaded
+    label = "com.memoryd.sync-push"
+    if launchctl_output is None:
+        launchctl_output = _launchctl_list()
+    loaded = label in (launchctl_output or "")
+    if loaded:
+        return CheckResult(
+            "sync_setup",
+            "sync (cross-device)",
+            "ok",
+            f"sync.dir={sync_dir} + 每天 03:30 自动 push",
+        )
+    return CheckResult(
+        "sync_setup",
+        "sync (cross-device)",
+        "warn",
+        f"sync.dir={sync_dir} 但 cron 未装",
+        hint="run `memoryd setup install-cron --sync-push`",
+    )
 
 
 # ---------------------------------------------------------------------------

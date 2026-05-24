@@ -1,0 +1,9 @@
+[Unit]
+Description=memoryd daily sync push timer
+
+[Timer]
+OnCalendar=*-*-* {{ "%02d:%02d:00" | format(hour, minute) }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

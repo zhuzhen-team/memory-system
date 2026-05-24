@@ -42,6 +42,7 @@ from fastmcp import FastMCP
 from .mcp_tools import admin as admin_tools
 from .mcp_tools import judge as judge_tools
 from .mcp_tools import memory as memory_tools
+from .mcp_tools import promotions as promotions_tools
 from .mcp_tools import session as session_tools
 
 
@@ -292,6 +293,64 @@ def build_server(*, include_admin: bool | None = None) -> FastMCP:
     )
     async def mem_compare(memory_id_a: str, memory_id_b: str) -> dict[str, Any]:
         return await judge_tools.compare(memory_id_a, memory_id_b)
+
+    # ----------------------------------------------------------------------
+    # Promotion-review tools (3) — agent tier, for in-conversation triage
+    # ----------------------------------------------------------------------
+
+    @mcp.tool(
+        name="mem_review_pending",
+        description=(
+            "List pending promotions (LLM-scored candidates awaiting human "
+            "judgment). Defaults: scope=global, sorted by DURA avg ascending "
+            "(most uncertain first). Use min_score/max_score to focus the "
+            "grey zone (e.g. 0.5..0.85)."
+        ),
+    )
+    async def mem_review_pending(
+        scope: str = "global",
+        limit: int = 10,
+        min_score: float = 0.0,
+        max_score: float = 1.0,
+        types: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return await promotions_tools.review_pending(
+            scope=scope,
+            limit=limit,
+            min_score=min_score,
+            max_score=max_score,
+            types=types,
+        )
+
+    @mcp.tool(
+        name="mem_promote",
+        description=(
+            "Approve pending promotion(s). Pass promotion_ids=[..] for "
+            "explicit batch, or auto_high=True to approve every row with "
+            "DURA avg >= threshold (default 0.85)."
+        ),
+    )
+    async def mem_promote(
+        promotion_ids: list[int] | None = None,
+        auto_high: bool = False,
+        threshold: float = 0.85,
+    ) -> dict[str, Any]:
+        return await promotions_tools.promote(
+            promotion_ids=promotion_ids,
+            auto_high=auto_high,
+            threshold=threshold,
+        )
+
+    @mcp.tool(
+        name="mem_reject",
+        description=(
+            "Reject pending promotion(s) — flips status to 'rejected'. They "
+            "stay in the table for audit but no .md is written. Use this "
+            "when the user explicitly says 'drop' / 'never mind' / etc."
+        ),
+    )
+    async def mem_reject(promotion_ids: list[int]) -> dict[str, Any]:
+        return await promotions_tools.reject(promotion_ids=promotion_ids)
 
     # ----------------------------------------------------------------------
     # Admin tools (6) — registered only when MEMORYD_MCP_ADMIN=1

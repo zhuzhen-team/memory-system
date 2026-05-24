@@ -321,6 +321,22 @@ def auto_install() -> dict:
         except Exception as e:  # noqa: BLE001
             results[f"{key}_error"] = str(e)
 
+    # sync_push cron — only install if user has configured sync.dir; otherwise
+    # the daily run would no-op repeatedly. User can opt in later via
+    # `memoryd config set sync.dir <path> && memoryd setup install-cron --sync-push`.
+    try:
+        from .config import load_config as _load_cfg
+        sync_dir = (_load_cfg() or {}).get("sync", {}).get("dir")
+        if sync_dir:
+            try:
+                results["sync_push_cron"] = str(install_cron("sync_push"))
+            except Exception as e:  # noqa: BLE001
+                results["sync_push_cron_error"] = str(e)
+        else:
+            results["sync_push_cron_skipped"] = "sync.dir not configured; set it then re-run auto-install"
+    except Exception as e:  # noqa: BLE001
+        results["sync_push_cron_error"] = str(e)
+
     # ---- Claude Code hooks ----
     try:
         results["cc_hook"] = str(install_cc_hook())
