@@ -119,20 +119,14 @@ memory-system/
 
 完整站：**https://EthanQC.github.io/memory-system/**
 
-### 给用户（你只想用 memoryd）
-
-- [让 AI 帮你装](https://EthanQC.github.io/memory-system/user/install-via-ai/) · [5 分钟开始](https://EthanQC.github.io/memory-system/getting-started/quickstart/) · [核心概念](https://EthanQC.github.io/memory-system/getting-started/concepts/)
-- [使用教程](https://EthanQC.github.io/memory-system/tutorials/)（9 篇实战，按场景）
-- [三端集成](https://EthanQC.github.io/memory-system/integrations/claude-code/)（CC / Codex / OpenClaw）
-- [跨设备同步配置](https://EthanQC.github.io/memory-system/operations/sync-setup/) · [日常运维](https://EthanQC.github.io/memory-system/operations/daily/) · [卸载](https://EthanQC.github.io/memory-system/operations/uninstall/)
-- [复用 Claude Code 详解](https://EthanQC.github.io/memory-system/user/reusing-claude-code/) · [LLM provider 选项](https://EthanQC.github.io/memory-system/user/llm-providers/)
-- [FAQ](https://EthanQC.github.io/memory-system/faq/) · [故障排查](https://EthanQC.github.io/memory-system/operations/troubleshooting/)
-
-### 给开发者（你想读源码 / 改它 / 贡献）
-
-- [架构全景](https://EthanQC.github.io/memory-system/architecture/overview/)（存储 / 搜索 / 治理 / KG / 画像 / 同步）
-- 参考：[数据模型](https://EthanQC.github.io/memory-system/reference/data-model/) · [CLI](https://EthanQC.github.io/memory-system/reference/cli/) · [MCP 工具](https://EthanQC.github.io/memory-system/reference/mcp-tools/) · [Web 仪表板](https://EthanQC.github.io/memory-system/reference/web-dashboard/)
-- [仓库结构](https://EthanQC.github.io/memory-system/development/repo-layout/) · [测试](https://EthanQC.github.io/memory-system/development/testing/) · [贡献](https://EthanQC.github.io/memory-system/development/contributing/)
+- **入门**：[让 AI 帮你装](https://EthanQC.github.io/memory-system/user/install-via-ai/) · [5 分钟上手](https://EthanQC.github.io/memory-system/getting-started/quickstart/) · [核心概念](https://EthanQC.github.io/memory-system/getting-started/concepts/) · [手工安装](https://EthanQC.github.io/memory-system/getting-started/installation/)
+- **教程**：[第一次记忆](https://EthanQC.github.io/memory-system/tutorials/first-memory/) · [自动捕获](https://EthanQC.github.io/memory-system/tutorials/auto-capture/) · [搜索召回](https://EthanQC.github.io/memory-system/tutorials/search-and-recall/) · [知识图谱](https://EthanQC.github.io/memory-system/tutorials/knowledge-graph/) · [画像自学习](https://EthanQC.github.io/memory-system/tutorials/profile-self-learning/) · [跨设备同步](https://EthanQC.github.io/memory-system/tutorials/cross-device-sync/) · [敏感记忆](https://EthanQC.github.io/memory-system/tutorials/sensitive-memories/)
+- **集成**：[Claude Code](https://EthanQC.github.io/memory-system/integrations/claude-code/) · [Codex](https://EthanQC.github.io/memory-system/integrations/codex/) · [OpenClaw](https://EthanQC.github.io/memory-system/integrations/openclaw/)
+- **配置**：[复用 Claude Code](https://EthanQC.github.io/memory-system/user/reusing-claude-code/) · [其他 LLM provider](https://EthanQC.github.io/memory-system/user/llm-providers/) · [跨设备同步](https://EthanQC.github.io/memory-system/operations/sync-setup/) · [加密](https://EthanQC.github.io/memory-system/operations/encryption/)
+- **运维**：[日常使用](https://EthanQC.github.io/memory-system/operations/daily/) · [定时任务](https://EthanQC.github.io/memory-system/operations/cron/) · [健康检查](https://EthanQC.github.io/memory-system/operations/health-check/) · [故障排查](https://EthanQC.github.io/memory-system/operations/troubleshooting/) · [卸载](https://EthanQC.github.io/memory-system/operations/uninstall/)
+- **架构**：[架构全景](https://EthanQC.github.io/memory-system/architecture/overview/) · [存储](https://EthanQC.github.io/memory-system/architecture/storage/) · [搜索](https://EthanQC.github.io/memory-system/architecture/search/) · [治理](https://EthanQC.github.io/memory-system/architecture/governance/) · [知识图谱](https://EthanQC.github.io/memory-system/architecture/knowledge-graph/) · [画像自学习](https://EthanQC.github.io/memory-system/architecture/profile-learning/) · [跨设备同步](https://EthanQC.github.io/memory-system/architecture/sync/)
+- **参考**：[数据模型](https://EthanQC.github.io/memory-system/reference/data-model/) · [CLI 命令](https://EthanQC.github.io/memory-system/reference/cli/) · [MCP 工具](https://EthanQC.github.io/memory-system/reference/mcp-tools/) · [memories.json 格式](https://EthanQC.github.io/memory-system/reference/memories-json/) · [Web 仪表板](https://EthanQC.github.io/memory-system/reference/web-dashboard/) · [仓库结构](https://EthanQC.github.io/memory-system/development/repo-layout/) · [测试](https://EthanQC.github.io/memory-system/development/testing/) · [贡献](https://EthanQC.github.io/memory-system/development/contributing/)
+- **常见问题**：[FAQ](https://EthanQC.github.io/memory-system/faq/)
 
 ## 适用范围
 

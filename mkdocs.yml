@@ -18,6 +18,7 @@ theme:
     - navigation.path
     - navigation.prune
     - toc.follow
+    - toc.integrate
     - search.suggest
     - search.highlight
     - search.share
@@ -82,58 +83,60 @@ plugins:
 nav:
   - 首页: index.md
 
-  - 给用户:
-    - 快速开始:
-      - 让 AI 帮你装（推荐）: user/install-via-ai.md
-      - 5 分钟上手: getting-started/quickstart.md
-      - 核心概念: getting-started/concepts.md
-    - 安装细节:
-      - 手工安装步骤: getting-started/installation.md
-      - 首次运行: getting-started/first-run.md
-      - 项目概览: getting-started/overview.md
-    - 三端集成:
-      - Claude Code: integrations/claude-code.md
-      - Codex: integrations/codex.md
-      - OpenClaw: integrations/openclaw.md
-    - 使用教程:
-      - 教程入口: tutorials/index.md
-      - 第一次记忆: tutorials/first-memory.md
-      - 自动捕获: tutorials/auto-capture.md
-      - 搜索与召回: tutorials/search-and-recall.md
-      - 知识图谱: tutorials/knowledge-graph.md
-      - 画像自学习: tutorials/profile-self-learning.md
-      - 跨设备同步: tutorials/cross-device-sync.md
-      - 敏感记忆: tutorials/sensitive-memories.md
-      - 故障诊断流: tutorials/troubleshooting-flow.md
-    - LLM 配置:
-      - 复用 Claude Code（默认）: user/reusing-claude-code.md
-      - 其他 provider 选项: user/llm-providers.md
-    - 日常运维:
-      - 日常使用: operations/daily.md
-      - 定时任务: operations/cron.md
-      - 跨设备同步配置: operations/sync-setup.md
-      - 加密: operations/encryption.md
-      - 健康检查: operations/health-check.md
-      - 故障排查: operations/troubleshooting.md
-      - 卸载: operations/uninstall.md
-    - 常见问题: faq.md
+  - 入门:
+    - 让 AI 帮你装（推荐）: user/install-via-ai.md
+    - 5 分钟上手: getting-started/quickstart.md
+    - 核心概念: getting-started/concepts.md
+    - 手工安装: getting-started/installation.md
+    - 首次运行: getting-started/first-run.md
+    - 项目概览: getting-started/overview.md
 
-  - 给开发者:
-    - 架构:
-      - 架构全景: architecture/overview.md
-      - 存储层: architecture/storage.md
-      - 搜索: architecture/search.md
-      - 治理: architecture/governance.md
-      - 知识图谱: architecture/knowledge-graph.md
-      - 画像自学习: architecture/profile-learning.md
-      - 跨设备同步: architecture/sync.md
-    - API 参考:
-      - 数据模型: reference/data-model.md
-      - CLI 命令: reference/cli.md
-      - MCP 工具: reference/mcp-tools.md
-      - memories.json 格式: reference/memories-json.md
-      - Web 仪表板: reference/web-dashboard.md
-    - 开发与贡献:
-      - 仓库结构: development/repo-layout.md
-      - 测试: development/testing.md
-      - 贡献: development/contributing.md
+  - 教程:
+    - 教程入口: tutorials/index.md
+    - 第一次记忆: tutorials/first-memory.md
+    - 自动捕获: tutorials/auto-capture.md
+    - 搜索与召回: tutorials/search-and-recall.md
+    - 知识图谱: tutorials/knowledge-graph.md
+    - 画像自学习: tutorials/profile-self-learning.md
+    - 跨设备同步: tutorials/cross-device-sync.md
+    - 敏感记忆: tutorials/sensitive-memories.md
+    - 故障诊断流: tutorials/troubleshooting-flow.md
+
+  - 集成:
+    - Claude Code: integrations/claude-code.md
+    - Codex: integrations/codex.md
+    - OpenClaw: integrations/openclaw.md
+
+  - 配置:
+    - 复用 Claude Code（默认）: user/reusing-claude-code.md
+    - 其他 LLM provider: user/llm-providers.md
+    - 跨设备同步配置: operations/sync-setup.md
+    - 加密: operations/encryption.md
+
+  - 运维:
+    - 日常使用: operations/daily.md
+    - 定时任务: operations/cron.md
+    - 健康检查: operations/health-check.md
+    - 故障排查: operations/troubleshooting.md
+    - 卸载: operations/uninstall.md
+
+  - 架构:
+    - 架构全景: architecture/overview.md
+    - 存储层: architecture/storage.md
+    - 搜索: architecture/search.md
+    - 治理: architecture/governance.md
+    - 知识图谱: architecture/knowledge-graph.md
+    - 画像自学习: architecture/profile-learning.md
+    - 跨设备同步: architecture/sync.md
+
+  - 参考:
+    - 数据模型: reference/data-model.md
+    - CLI 命令: reference/cli.md
+    - MCP 工具: reference/mcp-tools.md
+    - memories.json 格式: reference/memories-json.md
+    - Web 仪表板: reference/web-dashboard.md
+    - 仓库结构: development/repo-layout.md
+    - 测试: development/testing.md
+    - 贡献: development/contributing.md
+
+  - FAQ: faq.md
