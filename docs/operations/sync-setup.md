@@ -5,14 +5,15 @@ keywords: 同步, Dropbox, iCloud, Syncthing, memories.json, 跨设备
 
 # 同步配置：路径 A 增量 + 路径 B 单文件
 
-memoryd 支持两条独立的同步路径，按场景选。
+memoryd 支持三条独立的同步路径，按场景选。
 
 | 路径 | 适合 |
 |---|---|
-| **A 增量 markdown** | 日常多设备同步（Dropbox / iCloud / Syncthing / git） |
+| **A 增量 markdown** | 日常多设备同步（Dropbox / iCloud / Syncthing / git）；配 `sync.dir` 后 cron 每天 03:30 自动 push |
 | **B memories.json** | 一次性迁移、备份、跨工具导入导出 |
+| **C `sync bundle`** | 整包 tar.gz 含 markdown + identity + index.db + audit chain；最简跨设备迁移 + 离线备份 |
 
-两条可以并存。
+三条可以并存。
 
 详细架构见 [架构 · 跨设备同步](../architecture/sync.md)。
 
@@ -51,6 +52,19 @@ memoryd sync status --json
 
 `--auto` 子选项给 hook 用：仅在 config 允许时执行。
 
+### 自动每日 push（推荐）
+
+`setup auto-install` 检测到 `sync.dir` 配了就**自动装** cron：
+
+```bash
+memoryd config set sync.dir ~/Dropbox/memoryd
+memoryd setup auto-install     # 检测到 sync.dir → 自动加 sync_push cron 每天 03:30
+memoryd doctor                 # `sync (cross-device)` 行从 INFO 变 OK
+```
+
+cron 直接跑 `memoryd sync export`（不带 `--auto`），所以只要 `sync.dir` 配了就跑。
+单独装：`memoryd setup install-cron --sync-push`。
+
 ### 同步内容
 
 | 同步 | 不同步 |
@@ -70,6 +84,43 @@ memoryd sync status --json
 - 冲突进 `digest` 复盘等待用户裁决
 
 如果想 prefer-local，先 `--dry-run` 看清再决定。
+
+## 路径 C：`sync bundle` 一键打包（推荐跨设备迁移）
+
+把整个数据根打包成单个 `tar.gz`：
+
+```bash
+memoryd sync bundle                                # 默认输出 ~/Desktop/memoryd-snapshot-<ts>.tar.gz
+memoryd sync bundle --out=/tmp/snap.tar.gz
+memoryd sync bundle --include-encrypted            # 也含 .md.enc（默认跳过，因为 key 在 OS keychain）
+```
+
+bundle 包含：
+- `scopes/**/*.md` 所有 markdown
+- `scopes/**/.scope-name` / `.memoryd-sensitive` 标记
+- `profile/identity.md` + 历次快照 + 月度报告
+- `index.db` SQLite 索引
+- `audit/audit.jsonl` 审计链
+
+不包含 `logs/` / keyring / cron 状态（这些靠新机的 `setup auto-install` 重建）。
+
+### 在新机器上恢复
+
+```bash
+# 1. 拉仓 + 装包
+git clone https://github.com/EthanQC/memory-system ~/memory-system
+cd ~/memory-system/memoryd && uv venv && uv pip install -e .
+
+# 2. 恢复数据
+memoryd sync restore --from=/path/to/snap.tar.gz
+# 若数据根已非空：加 --force 覆盖（会删既有数据，慎用）
+
+# 3. 重挂三端 hook + cron + MCP（自动）
+memoryd setup auto-install
+memoryd doctor       # 应全绿
+```
+
+`restore` 拒绝 path-traversal 成员（恶意 tar 攻击防护），拒绝覆盖非空 root（除非 `--force`）。
 
 ## 路径 B：memories.json 单文件
 

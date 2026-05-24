@@ -326,9 +326,29 @@ def auto_install() -> dict:
     # `memoryd config set sync.dir <path> && memoryd setup install-cron --sync-push`.
     try:
         from .config import load_config as _load_cfg
-        sync_dir = (_load_cfg() or {}).get("sync", {}).get("dir")
+        _cfg = _load_cfg()
+        # `_load_cfg()` returns a `Config` object with `.sync` attr; only
+        # the test stubs return a plain dict. Handle both.
+        if hasattr(_cfg, "sync"):
+            sync_dir = getattr(_cfg.sync, "dir", None)
+            sync_enabled = getattr(_cfg.sync, "enabled", False)
+        else:
+            sync_obj = (_cfg or {}).get("sync", {}) if _cfg else {}
+            sync_dir = sync_obj.get("dir")
+            sync_enabled = sync_obj.get("enabled", False)
         if sync_dir:
+            # The cron template invokes `memoryd sync export` directly (no
+            # ``--auto`` flag). That bypasses the SessionEnd-only gate and
+            # respects only ``sync.dir`` being configured. We still flip
+            # ``sync.enabled`` to True for any other code paths that
+            # consult it.
             try:
+                if not sync_enabled:
+                    try:
+                        from .config import set_config_key
+                        set_config_key("sync.enabled", True)
+                    except Exception:  # noqa: BLE001 — config is optional
+                        pass
                 results["sync_push_cron"] = str(install_cron("sync_push"))
             except Exception as e:  # noqa: BLE001
                 results["sync_push_cron_error"] = str(e)

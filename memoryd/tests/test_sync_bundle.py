@@ -43,9 +43,10 @@ def _seed_data_root(root: Path) -> None:
     (root / "profile" / "change-reports" / "2026-05.md").write_text(
         "monthly report", encoding="utf-8"
     )
-    # fake db + audit
+    # fake db + audit chain (canonical layout: root/audit/audit.jsonl)
     (root / "index.db").write_bytes(b"sqlite-binary-data")
-    (root / "audit.log").write_text("{\"ts\":1}\n", encoding="utf-8")
+    (root / "audit").mkdir()
+    (root / "audit" / "audit.jsonl").write_text("{\"ts\":1}\n", encoding="utf-8")
     # noise that should NOT make it into the bundle
     (root / "logs").mkdir()
     (root / "logs" / "noise.log").write_text("host-specific log", encoding="utf-8")
@@ -73,9 +74,9 @@ def test_bundle_packs_expected_layout(tmp_path: Path) -> None:
     # profile
     assert "profile/identity.md" in names
     assert "profile/change-reports/2026-05.md" in names
-    # db + audit
+    # db + audit chain (canonical path inside data root)
     assert "index.db" in names
-    assert "audit.log" in names
+    assert "audit/audit.jsonl" in names
     # excluded
     assert not any(n.startswith("logs/") for n in names)
 
@@ -168,3 +169,24 @@ def test_restore_rejects_path_traversal(tmp_path: Path) -> None:
         restore(src=bad, data_root=dst)
     # Nothing got written outside dst
     assert not (tmp_path / "escaped.txt").exists()
+
+
+def test_restore_rejects_sibling_prefix_traversal(tmp_path: Path) -> None:
+    """Regression for the startswith-prefix-confusion bypass.
+
+    Old guard ``str(target).startswith(str(root.resolve()))`` let
+    ``../dst2/escaped.txt`` slip through when ``root=/.../dst`` because the
+    sibling ``/.../dst2`` shares the string prefix ``/.../dst``.
+    The fix uses ``Path.relative_to``.
+    """
+    bad = tmp_path / "evil.tar.gz"
+    with tarfile.open(bad, "w:gz") as tar:
+        info = tarfile.TarInfo(name="../dst2/escaped.txt")
+        info.size = 4
+        from io import BytesIO
+        tar.addfile(info, BytesIO(b"evil"))
+    dst = tmp_path / "dst"
+    (tmp_path / "dst2").mkdir()  # the sibling exists, prefix confusion possible
+    with pytest.raises(ValueError, match="path-traversal"):
+        restore(src=bad, data_root=dst)
+    assert not (tmp_path / "dst2" / "escaped.txt").exists()

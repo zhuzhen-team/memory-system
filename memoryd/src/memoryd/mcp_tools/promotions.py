@@ -129,6 +129,7 @@ async def promote(
     promotion_ids: list[int] | None = None,
     auto_high: bool = False,
     threshold: float = 0.85,
+    scope: str = "global",
 ) -> dict[str, Any]:
     """Approve one or many pending promotions in a single call.
 
@@ -137,7 +138,14 @@ async def promote(
                      ``auto_high=True``.
       auto_high:     if True, ignore ``promotion_ids`` and approve every
                      pending row whose DURA 4-dim average ≥ ``threshold``.
+                     Respects the ``scope`` filter so the agent flow
+                     "review pending in scope X" → "approve all high-DURA"
+                     stays scope-symmetric.
       threshold:     DURA cutoff for auto_high mode (default 0.85).
+      scope:         which scope's pending to consider in auto_high mode.
+                     ``"global"`` (default) = every scope; pass a
+                     ``scope_hash`` to limit. Ignored when ``promotion_ids``
+                     are passed explicitly.
 
     Returns ``{ok, approved: [ids], skipped: [{id, reason}], errors: [...]}``.
     """
@@ -146,6 +154,16 @@ async def promote(
     data_root = util.data_root()
     if auto_high:
         pending = list_pending_promotions(data_root)
+        # Apply scope filter so the agent's natural workflow
+        #   mem_review_pending(scope=X) → mem_promote(auto_high=True)
+        # stays consistent. Without this, auto-high would approve high-DURA
+        # rows from EVERY scope even when the agent was triaging one project.
+        if not util.is_global_scope(scope):
+            try:
+                resolved = util.derive_scope(scope)
+            except ValueError:
+                resolved = scope
+            pending = [p for p in pending if p.get("scope_hash") == resolved]
         targets: list[int] = []
         for p in pending:
             try:

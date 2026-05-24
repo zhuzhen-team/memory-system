@@ -334,11 +334,13 @@ def build_server(*, include_admin: bool | None = None) -> FastMCP:
         promotion_ids: list[int] | None = None,
         auto_high: bool = False,
         threshold: float = 0.85,
+        scope: str = "global",
     ) -> dict[str, Any]:
         return await promotions_tools.promote(
             promotion_ids=promotion_ids,
             auto_high=auto_high,
             threshold=threshold,
+            scope=scope,
         )
 
     @mcp.tool(

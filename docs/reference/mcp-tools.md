@@ -1,14 +1,33 @@
 ---
 title: MCP 工具
-keywords: MCP, mem_save, mem_search, fastmcp, 19 个工具
+keywords: MCP, mem_save, mem_search, mem_review_pending, fastmcp, 22 个工具
 ---
 
-# MCP 工具：19 个 `mem_*` 工具签名 + 示例
+# MCP 工具：22 个 `mem_*` 工具签名 + 示例
 
-memoryd 的 MCP server 暴露 19 个 `mem_*` 工具：
+memoryd 的 MCP server 暴露 22 个 `mem_*` 工具：
 
-- **13 个 agent-tier** —— 默认对所有客户端可见
+- **16 个 agent-tier** —— 默认对所有客户端可见（含 3 个 promotion-review 工具，让 CC 内一句话过 pending）
 - **6 个 admin-tier** —— 仅 `MEMORYD_MCP_ADMIN=1` 或 `--admin` 时注册
+
+## Promotion-review（3 个，让 CC 在会话里直接审批 pending）
+
+| 工具 | 签名 | 用途 |
+|---|---|---|
+| `mem_review_pending` | `(scope="global", limit=10, min_score=0.0, max_score=1.0, types=None)` | 列待审批 promotions，DURA avg 升序（最不确定的先），含 reasoning |
+| `mem_promote` | `(promotion_ids=None, auto_high=False, threshold=0.85, scope="global")` | 批一个/多个/或全部高分（DURA≥threshold）。`scope` 参数让 auto_high 限定到具体 scope |
+| `mem_reject` | `(promotion_ids=[...])` | 拒绝 promotion(s)，flips status='rejected'（不写 .md，保留 audit） |
+
+典型 CC 内对话：
+
+```
+你: "过一遍 pending"
+CC: [mem_review_pending(limit=10)] "你有 X 条灰区，最低分 #87 (avg 0.65)..."
+你: "批 87 89，拒 88"
+CC: [mem_promote(ids=[87,89]) + mem_reject(ids=[88])]
+你: "剩下的全批高分"
+CC: [mem_promote(auto_high=True, threshold=0.85)]
+```
 
 源码：
 

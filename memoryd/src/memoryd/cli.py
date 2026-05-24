@@ -613,8 +613,6 @@ def _cmd_backfill(args: argparse.Namespace) -> int:
     print(f"backfill: 完成 — {succeeded} 成功, {failed} 失败, 总耗时 {int(total//60)}m{int(total%60):02d}s")
     print("跑 `memoryd kg entities --top=30` 看抽出的实体；`memoryd profile show` 看画像。")
     return 0 if failed == 0 else 1
-    print(f"backfill: done. Run `memoryd kg entities --top=30` to see what got extracted.")
-    return 0
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -829,8 +827,15 @@ def _iter_scopes(data_root: Path) -> list[str]:
 def cmd_search(args: argparse.Namespace) -> int:
     """Full-text search across memories; aggregates across scopes by default."""
     from .search import search_sessions
+    from .mcp_tools.util import is_global_scope
     data_root = _data_root()
-    target_scopes = [args.scope] if args.scope else _iter_scopes(data_root)
+    # `--scope=global` (or empty / "_global") is the sentinel for "every scope"
+    # — without this branch we'd pass the literal string into ``search_sessions``
+    # and its SQL ``WHERE m.scope_hash = ?`` would always match zero rows.
+    if not args.scope or is_global_scope(args.scope):
+        target_scopes = _iter_scopes(data_root)
+    else:
+        target_scopes = [args.scope]
     hits: list[dict[str, Any]] = []
     for sh in target_scopes:
         try:
@@ -914,7 +919,11 @@ def _list_memories(
         if type_:
             q += " AND type = ?"
             params.append(type_)
-        if scope_hash:
+        # Apply scope filter only when the caller passed a real scope_hash.
+        # ``"global"`` / ``"_global"`` / ``""`` are the sentinel for "every
+        # scope" — see ``mcp_tools.util.is_global_scope``.
+        from .mcp_tools.util import is_global_scope as _is_global
+        if scope_hash and not _is_global(scope_hash):
             q += " AND scope_hash = ?"
             params.append(scope_hash)
         q += " ORDER BY created_at DESC LIMIT ?"
@@ -1659,16 +1668,21 @@ def _resolve_entity_id(store, name_or_id: str) -> str | None:
 
 
 def _cmd_kg_entities(args: argparse.Namespace) -> int:
+    from .mcp_tools.util import is_global_scope as _is_global
+    # ``--scope=global`` (or omitted) means "every scope" — pass None to
+    # KG queries so they skip the scope filter. Matches the same sentinel
+    # convention used by mem_search, /api/graph/global, etc.
+    scope_filter = None if (args.scope is None or _is_global(args.scope)) else args.scope
     idx, store = _open_kg_store()
     try:
         if args.type_:
             # `top_entities` doesn't take a type filter, so for --type queries
             # we use list_entities + cap.
-            ents = store.list_entities(type=args.type_, scope_hash=args.scope)
+            ents = store.list_entities(type=args.type_, scope_hash=scope_filter)
             ents = ents[: args.top]
         else:
             ents = store.top_entities(
-                scope_hash=args.scope,
+                scope_hash=scope_filter,
                 window_days=args.window_days,
                 top_k=args.top,
             )

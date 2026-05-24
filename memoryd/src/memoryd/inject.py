@@ -30,29 +30,47 @@ _DEFAULT_RECENT_TYPES: tuple[str, ...] = ("decision", "preference", "fact")
 _EMPTY_FALLBACK = "_(memoryd 未启用 / 数据为空)_"
 
 
-def _grey_zone_preview(data_root: Path, limit: int = 5) -> list[dict[str, Any]]:
+def _grey_zone_preview(
+    data_root: Path,
+    limit: int = 5,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
     """Return up to ``limit`` pending promotions, lowest DURA-avg first.
 
     Used by SessionStart inject when there are few enough pending entries to
     show each one inline (so the agent / user can act without leaving the
     conversation). Returns [] on any error — inject must never fail.
+
+    Passes the caller's existing sqlite connection through when provided to
+    avoid opening a second connection every SessionStart (inject's main
+    ``render_session_context`` already has a live ``conn``).
     """
     db = data_root / "index.db"
-    if not db.exists():
-        return []
     import json as _json
+    own_conn = False
     try:
-        conn = sqlite3.connect(str(db))
-        try:
-            rows = conn.execute(
-                "SELECT id, proposed_type, proposed_title, dura_score "
-                "FROM promotions WHERE status='pending' "
-                "ORDER BY created_at DESC"
-            ).fetchall()
-        finally:
-            conn.close()
+        if conn is None:
+            if not db.exists():
+                return []
+            conn = sqlite3.connect(str(db))
+            own_conn = True
+        # Cap the SQL pull — backlogs of 100+ rows pull every row each
+        # SessionStart without this. We sort by DURA in Python after pulling,
+        # so a 200-row cap is a safety net (we only need the lowest 5).
+        rows = conn.execute(
+            "SELECT id, proposed_type, proposed_title, dura_score "
+            "FROM promotions WHERE status='pending' "
+            "ORDER BY created_at DESC LIMIT 200"
+        ).fetchall()
     except Exception:  # noqa: BLE001 — best-effort, inject must not raise
         return []
+    finally:
+        if own_conn and conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     enriched: list[dict[str, Any]] = []
     for row in rows:
@@ -305,14 +323,22 @@ def render_session_context(
                     )
                 # Pending promotion backlog — surface when ≥ 5 so user
                 # notices in-context. Silent when 0..4 to avoid noise.
+                # We also grab the preview rows while the shared conn is
+                # still open, so the helper doesn't have to reopen sqlite
+                # below.
+                pending_preview: list[dict[str, Any]] = []
                 try:
                     pending_count = conn.execute(
                         "SELECT COUNT(*) FROM promotions WHERE status='pending'"
                     ).fetchone()[0]
+                    if 1 <= pending_count <= 8:
+                        pending_preview = _grey_zone_preview(root, limit=5, conn=conn)
                 except Exception:  # noqa: BLE001 — table may not exist
                     pending_count = 0
             finally:
                 conn.close()
+        else:
+            pending_preview = []
 
         if not identity and not top_entities and not recent and not trends_line and pending_count == 0:
             return _EMPTY_FALLBACK
@@ -349,9 +375,10 @@ def render_session_context(
             parts.append("")
 
         if pending_count >= 1:
-            # 灰区少（≤5）时直接展开预览，CC 可以一句话帮你过；
+            # 灰区少（≤8）时直接展开预览，CC 可以一句话帮你过；
             # 灰区多时只提示数字 + 引导，避免淹没 inject 段。
-            preview_rows = _grey_zone_preview(root, limit=5) if pending_count <= 8 else []
+            # preview_rows 在上面 conn 还活着时已经查过了，复用避免重开 sqlite。
+            preview_rows = pending_preview
             if preview_rows:
                 parts.append(
                     f"**待审批记忆 {pending_count} 条**（DURA 评分通过等你判断）："

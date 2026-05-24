@@ -129,15 +129,19 @@ def bundle(
                     tar.add(path, arcname=_arcname(path))
                     files_total += 1
                     profile_files += 1
-        # index.db + audit.log (best-effort; missing is fine)
+        # index.db + audit chain (best-effort; missing is fine)
         index_db = root / "index.db"
         if index_db.exists():
             tar.add(index_db, arcname="index.db")
             has_index_db = True
             files_total += 1
-        audit_log = root / "audit.log"
-        if audit_log.exists():
-            tar.add(audit_log, arcname="audit.log")
+        # Audit chain lives at root/audit/audit.jsonl per
+        # governance.audit.audit_log_path(). Older versions of this bundle
+        # function looked at root/audit.log which never existed on a real
+        # install and silently dropped the chain on migration.
+        audit_jsonl = root / "audit" / "audit.jsonl"
+        if audit_jsonl.exists():
+            tar.add(audit_jsonl, arcname="audit/audit.jsonl")
             has_audit_log = True
             files_total += 1
 
@@ -185,11 +189,19 @@ def restore(
 
     with tarfile.open(src, "r:gz") as tar:
         # Safe-extract: refuse any member whose path escapes ``root``.
+        # We use ``Path.relative_to`` (Python 3.9+) — string ``startswith``
+        # is unsafe because ``root=/tmp/dst`` is a prefix of sibling
+        # ``/tmp/dst2/x`` so member ``../dst2/x`` would slip through.
+        root_resolved = root.resolve()
         members = tar.getmembers()
         for m in members:
             target = (root / m.name).resolve()
-            if not str(target).startswith(str(root.resolve())):
-                raise ValueError(f"refusing path-traversal member: {m.name}")
+            try:
+                target.relative_to(root_resolved)
+            except ValueError as exc:
+                raise ValueError(
+                    f"refusing path-traversal member: {m.name!r} -> {target}"
+                ) from exc
         tar.extractall(root, members=members)  # noqa: S202 — paths validated above
 
         for m in members:
@@ -201,7 +213,7 @@ def restore(
                     profile_files += 1
                 elif m.name == "index.db":
                     has_index_db = True
-                elif m.name == "audit.log":
+                elif m.name == "audit/audit.jsonl":
                     has_audit_log = True
 
     return BundleStats(

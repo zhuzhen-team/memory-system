@@ -51,7 +51,11 @@ def append_event(event: dict) -> dict:
     while ``memoryd capture`` runs from a CC SessionEnd hook) can't interleave
     and break the chain.
     """
-    import fcntl  # POSIX-only; Windows uses msvcrt fallback below.
+    import fcntl  # POSIX-only. On Windows the lock degrades to best-effort
+    # (no locking) — see the bare ``except (OSError, AttributeError): pass``
+    # below. A future Windows implementation can drop in ``msvcrt.locking``
+    # or ``portalocker`` but right now we document the platform limit
+    # honestly rather than silently break the chain.
 
     p = audit_log_path()
     p.parent.mkdir(parents=True, exist_ok=True)
