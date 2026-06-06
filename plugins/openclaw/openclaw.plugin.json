@@ -8,6 +8,13 @@
     "allowConversationAccess": true,
     "allowPromptInjection": true
   },
+  "contracts": {
+    "tools": [
+      "memory_search",
+      "memory_get",
+      "memory_transcript"
+    ]
+  },
   "tools": [
     {
       "name": "memory_search",
@@ -15,11 +22,22 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "自然语言查询，支持中文" },
-          "top_k": { "type": "integer", "default": 10 },
-          "scope": { "type": "string", "default": "auto" }
+          "query": {
+            "type": "string",
+            "description": "自然语言查询，支持中文"
+          },
+          "top_k": {
+            "type": "integer",
+            "default": 10
+          },
+          "scope": {
+            "type": "string",
+            "default": "auto"
+          }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       }
     },
     {
@@ -28,9 +46,13 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "memory_id": { "type": "string" }
+          "memory_id": {
+            "type": "string"
+          }
         },
-        "required": ["memory_id"]
+        "required": [
+          "memory_id"
+        ]
       }
     },
     {
@@ -39,15 +61,25 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "memory_id": { "type": "string" }
+          "memory_id": {
+            "type": "string"
+          }
         },
-        "required": ["memory_id"]
+        "required": [
+          "memory_id"
+        ]
       }
     }
   ],
   "hooks": [
-    { "event": "before_agent_start", "handler": "src/hooks/before_agent_start.js" },
-    { "event": "agent_end", "handler": "src/hooks/agent_end.js" }
+    {
+      "event": "before_agent_start",
+      "handler": "src/hooks/before_agent_start.js"
+    },
+    {
+      "event": "agent_end",
+      "handler": "src/hooks/agent_end.js"
+    }
   ],
   "configSchema": {
     "type": "object",
@@ -55,7 +87,10 @@
     "properties": {
       "transport": {
         "type": "string",
-        "enum": ["cli", "http"],
+        "enum": [
+          "cli",
+          "http"
+        ],
         "default": "cli",
         "description": "调用 memoryd 的方式：本地 CLI 或本地 HTTP server"
       },
