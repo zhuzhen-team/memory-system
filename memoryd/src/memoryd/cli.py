@@ -443,7 +443,13 @@ def _cmd_install_cron(args: argparse.Namespace) -> int:
         )
         return 2
     for k in keys:
-        out = setup_mod.install_cron(k)
+        try:
+            out = setup_mod.install_cron(k)
+        except RuntimeError as e:
+            # _ctx fails loudly when the memoryd binary is unfindable; surface
+            # the actionable message instead of a traceback.
+            print(f"install-cron: {e}", file=sys.stderr)
+            return 2
         print(f"installed {k}: {out}", file=sys.stderr)
     return 0
 

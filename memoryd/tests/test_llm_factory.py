@@ -102,8 +102,12 @@ def test_azure_openai_async_provider_raises_when_no_endpoint(monkeypatch):
 
 
 def test_legacy_get_provider_still_importable(monkeypatch, tmp_path):
-    """The Plan 3 get_provider should keep returning a sync AnthropicProvider."""
-    from memoryd.llm import AnthropicProvider, get_provider
+    """get_provider keeps working and follows DEFAULT_CONFIG (claude-code).
+
+    Was asserting AnthropicProvider — stale since the default provider
+    deliberately moved to claude-code (see DEFAULT_CONFIG comment)."""
+    from memoryd.llm import get_provider
+    from memoryd.llm.claude_code_provider import ClaudeCodeProvider
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(tmp_path))
@@ -117,7 +121,7 @@ def test_legacy_get_provider_still_importable(monkeypatch, tmp_path):
     ):
         monkeypatch.delenv(var, raising=False)
     p = get_provider()
-    assert isinstance(p, AnthropicProvider)
+    assert isinstance(p, ClaudeCodeProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -131,3 +135,39 @@ def test_llm_message_roundtrips():
     assert m.content == "hi"
     # Pydantic v2 dumps
     assert m.model_dump() == {"role": "user", "content": "hi"}
+
+
+# ---------------------------------------------------------------------------
+# Config-aware factory (get_llm_from_config)
+# ---------------------------------------------------------------------------
+
+
+def test_get_llm_from_config_honors_configured_provider(monkeypatch, tmp_path):
+    """judge/compare must use the provider from config.toml, not the hardcoded
+    anthropic default. Real incident: claude-code was configured but every MCP
+    judge call failed with 'ANTHROPIC_API_KEY env not set'."""
+    (tmp_path / "config.toml").write_text(
+        '[llm]\nprovider = "claude-code"\nmodel = "claude-haiku-4-5"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(tmp_path))
+    from memoryd.llm import get_llm_from_config
+    from memoryd.llm.claude_code_provider import ClaudeCodeProvider
+
+    p = get_llm_from_config()
+    assert isinstance(p, ClaudeCodeProvider)
+    assert p.model == "claude-haiku-4-5"
+
+
+def test_get_llm_from_config_anthropic_route(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    (tmp_path / "config.toml").write_text(
+        '[llm]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(tmp_path))
+    from memoryd.llm import get_llm_from_config
+
+    p = get_llm_from_config(client=MagicMock())
+    assert isinstance(p, AnthropicAsyncProvider)
+    assert p.model == "claude-sonnet-4-5"

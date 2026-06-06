@@ -34,7 +34,7 @@ from .base import (
     LLMUnavailable,
 )
 from .claude_code_provider import ClaudeCodeProvider
-from .factory import get_llm
+from .factory import get_llm, get_llm_from_config
 from .ollama_provider import OllamaAsyncProvider
 from .openai_provider import OpenAIAsyncProvider
 
@@ -49,6 +49,7 @@ __all__ = [
     "OllamaAsyncProvider",
     "ClaudeCodeProvider",
     "get_llm",
+    "get_llm_from_config",
     # Legacy API (Plan 3 backward compat)
     "AnthropicProvider",
     "LegacyLLMProvider",

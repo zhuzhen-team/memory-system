@@ -129,3 +129,26 @@ kdf_iters = 1200000
     cfg = load_config()
     assert cfg.sensitive.key_source == "passphrase"
     assert cfg.sensitive.kdf_iters == 1200000
+
+
+def test_load_config_never_aliases_default_config(monkeypatch, tmp_path):
+    """Mutating a load_config() result must not poison the process-global
+    DEFAULT_CONFIG. It was a shallow copy: nested dicts ("llm", "sync", ...)
+    were shared, so any in-place edit (config set, tests) leaked into every
+    later load_config() in the same process."""
+    from memoryd.config import DEFAULT_CONFIG, load_config
+
+    # path 1: no config file → defaults
+    monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(tmp_path / "empty"))
+    cfg = load_config()
+    cfg["llm"]["provider"] = "poisoned"
+    assert DEFAULT_CONFIG["llm"]["provider"] != "poisoned"
+
+    # path 2: partial config file → merged; untouched sections must not alias
+    d = tmp_path / "partial"
+    d.mkdir()
+    (d / "config.toml").write_text("[sync]\ndir = \"/tmp/x\"\n", encoding="utf-8")
+    monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(d))
+    cfg2 = load_config()
+    cfg2["llm"]["model"] = "poisoned-model"
+    assert DEFAULT_CONFIG["llm"]["model"] != "poisoned-model"

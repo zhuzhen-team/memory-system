@@ -52,6 +52,10 @@ def test_get_provider_returns_anthropic_when_configured(monkeypatch, tmp_path):
     """get_provider() reads ~/.config/memoryd/config.toml."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setenv("MEMORYD_CONFIG_HOME", str(tmp_path))
+    # Actually configure anthropic — the test used to lean on the old default
+    # (and on DEFAULT_CONFIG aliasing pollution masking it after the default
+    # moved to claude-code).
+    (tmp_path / "config.toml").write_text('[llm]\nprovider = "anthropic"\n')
     # Clear proxy env vars so anthropic.Anthropic() can initialise in environments
     # that have a SOCKS proxy configured (socksio may not be installed).
     for _pvar in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY",

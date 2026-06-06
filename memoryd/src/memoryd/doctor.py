@@ -530,6 +530,40 @@ _LAUNCHD_LABELS = {
 }
 
 
+def _validate_plist_program(plist_path: Path) -> str | None:
+    """Return an error string when the plist's program can't actually run.
+
+    Two real-incident shapes (2026-06-05):
+    - ``ProgramArguments[0]`` points at a binary that no longer exists
+      (/tmp/fresh-install/... left behind by a smoke test).
+    - ``ProgramArguments == [python3, "decay-sweep"]`` — interpreter present
+      but the script argument isn't a real file, so launchd exits 2 forever.
+
+    Returns None when the plist looks runnable. Never raises — a malformed
+    plist is a warn, not a doctor crash.
+    """
+    import plistlib
+
+    try:
+        with open(plist_path, "rb") as f:
+            data = plistlib.load(f)
+        argv = data.get("ProgramArguments") or (
+            [data["Program"]] if data.get("Program") else []
+        )
+    except Exception as exc:  # corrupted plist must not crash doctor
+        return f"unreadable plist: {exc}"
+    if not argv:
+        return "unreadable plist: no Program/ProgramArguments"
+    prog = Path(str(argv[0]))
+    if not prog.exists():
+        return f"program missing: {prog}"
+    if prog.name.startswith("python") and len(argv) > 1:
+        script = Path(str(argv[1]))
+        if not script.is_file():
+            return f"interpreter without script: {argv[1]!r} is not a file"
+    return None
+
+
 def _launchd_check(
     label: str,
     *,
@@ -545,17 +579,35 @@ def _launchd_check(
         return ("info", f"(skipped, platform={plat})", None)
     plist_path = (plist_dir or (Path.home() / "Library" / "LaunchAgents")) / f"{label}.plist"
     if launchctl_output and label in launchctl_output:
-        # Parse PID column to surface "running" vs "loaded but not running".
+        # Parse PID + last-exit columns ("PID\tStatus\tLabel"; PID is "-"
+        # when the job isn't currently running).
         pid: str | None = None
+        last_exit: str | None = None
         for line in launchctl_output.splitlines():
             if label in line:
                 cols = line.split()
                 if cols and cols[0].isdigit():
                     pid = cols[0]
+                if len(cols) >= 2 and cols[1].lstrip("-").isdigit():
+                    last_exit = cols[1]
                 break
         if pid:
             return ("ok", f"running (PID {pid})", None)
         if plist_path.exists():
+            # "loaded" alone proved meaningless in practice: poisoned plists
+            # (program path gone, or interpreter-without-script) sat loaded
+            # for two weeks reporting ok while every run failed (2026-06-05).
+            err = _validate_plist_program(plist_path)
+            if err is not None:
+                if err.startswith("unreadable"):
+                    return ("warn", f"{err} ({plist_path})", hint_install)
+                return ("fail", f"{err} ({plist_path})", hint_install)
+            if last_exit not in (None, "0"):
+                return (
+                    "warn",
+                    f"loaded but last run exited {last_exit} ({plist_path})",
+                    "tail the job's StandardErrorPath log for the traceback",
+                )
             return ("ok", f"loaded ({plist_path})", None)
         return ("ok", "loaded", None)
     if plist_path.exists():

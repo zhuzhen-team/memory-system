@@ -134,3 +134,42 @@ def test_timeout_kills_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
     p = ClaudeCodeProvider(model="x", binary="/bin/true", timeout=0.05)
     with pytest.raises(LLMUnavailable, match="timed out"):
         asyncio.run(p.generate([LLMMessage(role="user", content="x")]))
+
+
+# ---------------------------------------------------------------------------
+# Binary discovery (_discover_claude_bin)
+# ---------------------------------------------------------------------------
+
+
+def test_discover_claude_bin_env_override_wins(monkeypatch):
+    from memoryd.llm import claude_code_provider as ccp
+
+    monkeypatch.setenv("MEMORYD_CLAUDE_BIN", "/custom/claude")
+    assert ccp._discover_claude_bin() == "/custom/claude"
+
+
+def test_discover_claude_bin_falls_back_to_known_locations(monkeypatch, tmp_path):
+    """launchd / GUI processes run with a minimal PATH (no ~/.local/bin):
+    which() fails there and the literal 'claude' fallback can never spawn.
+    Real incident: monthly-report exit 1 in launchd, MCP judge always
+    degraded with 'claude CLI not found'."""
+    from memoryd.llm import claude_code_provider as ccp
+
+    monkeypatch.delenv("MEMORYD_CLAUDE_BIN", raising=False)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    claude = local_bin / "claude"
+    claude.touch()
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    assert ccp._discover_claude_bin() == str(claude)
+
+
+def test_discover_claude_bin_literal_last_resort(monkeypatch, tmp_path):
+    from memoryd.llm import claude_code_provider as ccp
+
+    monkeypatch.delenv("MEMORYD_CLAUDE_BIN", raising=False)
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)  # empty home
+    monkeypatch.setattr(ccp, "_EXTRA_FALLBACK_DIRS", ())
+    assert ccp._discover_claude_bin() == "claude"

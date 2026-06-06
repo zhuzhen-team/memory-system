@@ -564,3 +564,65 @@ def test_run_all_checks_returns_list(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert "memory_counts" in ids
     assert "entities" in ids
     assert "recent_capture" in ids
+
+
+# ---------------------------------------------------------------------------
+# launchd plist health (real incident 2026-06-05: poisoned plists said "ok")
+# ---------------------------------------------------------------------------
+
+
+def _write_plist(tmp_path, label: str, argv: list[str]):
+    import plistlib
+
+    p = tmp_path / f"{label}.plist"
+    with open(p, "wb") as f:
+        plistlib.dump({"Label": label, "ProgramArguments": argv}, f)
+    return p
+
+
+def test_launchd_cron_fails_when_program_missing(tmp_path):
+    """plist points at a binary that no longer exists (/tmp/fresh-install/...
+    after a smoke test) — was reported 'ok (loaded)' for two weeks."""
+    label = doctor._LAUNCHD_LABELS["decay"]
+    _write_plist(tmp_path, label, ["/tmp/nonexistent-bin/memoryd", "decay-sweep"])
+    r = doctor.check_launchd_cron(
+        "decay", launchctl_output=f"-\t0\t{label}", plist_dir=tmp_path
+    )
+    assert r.status == "fail"
+    assert "install-cron" in (r.hint or "")
+
+
+def test_launchd_cron_fails_when_interpreter_has_no_script(tmp_path):
+    """ProgramArguments == [python3, 'decay-sweep'] — interpreter exists but
+    the script arg isn't a file; launchd exits 2 forever (renderer regression)."""
+    label = doctor._LAUNCHD_LABELS["decay"]
+    fake_py = tmp_path / "python3"
+    fake_py.touch()
+    _write_plist(tmp_path, label, [str(fake_py), "decay-sweep"])
+    r = doctor.check_launchd_cron(
+        "decay", launchctl_output=f"-\t0\t{label}", plist_dir=tmp_path
+    )
+    assert r.status == "fail"
+
+
+def test_launchd_cron_warns_on_nonzero_last_exit(tmp_path):
+    label = doctor._LAUNCHD_LABELS["decay"]
+    fake_bin = tmp_path / "memoryd"
+    fake_bin.touch()
+    _write_plist(tmp_path, label, [str(fake_bin), "decay-sweep"])
+    r = doctor.check_launchd_cron(
+        "decay", launchctl_output=f"-\t78\t{label}", plist_dir=tmp_path
+    )
+    assert r.status == "warn"
+    assert "78" in r.value
+
+
+def test_launchd_cron_still_ok_when_healthy(tmp_path):
+    label = doctor._LAUNCHD_LABELS["decay"]
+    fake_bin = tmp_path / "memoryd"
+    fake_bin.touch()
+    _write_plist(tmp_path, label, [str(fake_bin), "decay-sweep"])
+    r = doctor.check_launchd_cron(
+        "decay", launchctl_output=f"-\t0\t{label}", plist_dir=tmp_path
+    )
+    assert r.status == "ok"

@@ -66,7 +66,7 @@ async def _judge_via_llm(
     distinguish "LLM said no" from "LLM unavailable" via ``llm_available``.
     """
     try:
-        from ..llm import get_llm
+        from ..llm import get_llm_from_config
         from ..llm.prompts import (
             SupersedeJudgment,
             render_judge_prompt,
@@ -81,7 +81,7 @@ async def _judge_via_llm(
         }
 
     try:
-        provider = get_llm()
+        provider = get_llm_from_config()
     except Exception as e:
         return {
             "candidate_old_id": old_id,

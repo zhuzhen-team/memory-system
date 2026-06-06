@@ -200,8 +200,8 @@ async def doctor() -> dict[str, Any]:
 
     # 4) LLM provider
     try:
-        from ..llm import get_llm
-        provider = get_llm()
+        from ..llm import get_llm_from_config
+        provider = get_llm_from_config()
         checks["llm"] = {"ok": True, "provider": getattr(provider, "name", "unknown"),
                           "model": getattr(provider, "model", "unknown")}
     except Exception as e:
@@ -295,9 +295,9 @@ async def suggest_topic_key(content: str) -> dict[str, Any]:
     fallback_key = _heuristic_topic_key(text)
 
     try:
-        from ..llm import get_llm
+        from ..llm import get_llm_from_config
         from ..llm.base import LLMMessage
-        provider = get_llm()
+        provider = get_llm_from_config()
     except Exception as e:
         return util.ok(topic_key=fallback_key, source="heuristic", reason=f"no llm: {e}")
 

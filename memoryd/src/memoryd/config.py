@@ -169,12 +169,21 @@ def _load_sensitive(data: dict[str, Any]) -> SensitiveConfig:
 
 
 def load_config() -> Config:
+    # deepcopy, not dict(): a shallow copy shares the nested "llm"/"sync"/...
+    # dicts with process-global DEFAULT_CONFIG, so any in-place edit on a
+    # load_config() result (config set, tests) silently poisons every later
+    # load_config() in the same process.
+    import copy
+
     p = _config_path()
     if not p.exists():
-        data = dict(DEFAULT_CONFIG)
+        data = copy.deepcopy(DEFAULT_CONFIG)
         return Config(data, _load_notify({}), _load_sync({}), _load_sensitive({}))
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
-    merged = _merge_dict(DEFAULT_CONFIG, parsed)
+    # NOTE: this guards the shared global only. Sections present in `parsed`
+    # but absent from DEFAULT_CONFIG still alias `parsed` — harmless, since
+    # `parsed` is a fresh tomllib result discarded after this call.
+    merged = _merge_dict(copy.deepcopy(DEFAULT_CONFIG), parsed)
     return Config(
         merged,
         _load_notify(parsed),

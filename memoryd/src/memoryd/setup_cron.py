@@ -86,21 +86,53 @@ def known_jobs() -> tuple[str, ...]:
     return tuple(_JOBS.keys())
 
 
+def _sibling_memoryd() -> str | None:
+    """Console script next to the running interpreter (venv layout).
+
+    Lets ``.venv/bin/memoryd setup install-cron`` work without the venv on
+    PATH. Returns None when absent — callers must fail loudly rather than
+    render a plist that exec's the bare interpreter (``python3 decay-sweep``
+    can't run; real incident 2026-06-05, launchd exit 512 on all four jobs).
+    """
+    exe = Path(sys.executable)
+    for name in ("memoryd", "memoryd.exe"):
+        cand = exe.with_name(name)
+        if cand.exists():
+            return str(cand)
+    return None
+
+
 def _ctx(job_key: str) -> dict:
     spec = _JOBS[job_key]
     sch = spec["schedule"]
-    bin_path = shutil.which("memoryd") or sys.executable
+    bin_path = shutil.which("memoryd") or _sibling_memoryd()
+    if not bin_path:
+        raise RuntimeError(
+            "memoryd binary not found: not on PATH and no console script "
+            f"next to {sys.executable}; run via the venv's memoryd entry "
+            "point or add its bin/ to PATH"
+        )
     data_root = os.environ.get(
         "MEMORYD_DATA_ROOT", str(Path.home() / ".local" / "share" / "memoryd")
     )
     log_dir = str(Path(data_root) / "logs")
     Path(log_dir).mkdir(parents=True, exist_ok=True)
+    # Pass the installer shell's proxy settings through to the job env.
+    # LLM-backed jobs (weekly identity rewrite, monthly report) spawn
+    # `claude -p`, which 403s on proxied networks without these; launchd
+    # provides no shell env (real incident 2026-06-05: monthly-report exit 1).
+    extra_env: dict[str, str] = {}
+    for key in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY"):
+        val = os.environ.get(key) or os.environ.get(key.lower())
+        if val:
+            extra_env[key] = val
     ctx = dict(
         memoryd_bin=bin_path,
         data_root=data_root,
         log_dir=log_dir,
         hour=sch.hour,
         minute=sch.minute,
+        extra_env=extra_env,
     )
     if sch.weekday is not None:
         ctx["weekday"] = sch.weekday

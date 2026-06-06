@@ -21,6 +21,8 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>MEMORYD_DATA_ROOT</key><string>{{ data_root }}</string>
+{% for k, v in (extra_env or {}).items() %}    <key>{{ k | e }}</key><string>{{ v | e }}</string>
+{% endfor %}
   </dict>
 </dict>
 </plist>

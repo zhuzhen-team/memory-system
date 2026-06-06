@@ -77,3 +77,22 @@ def get_llm(
     raise LLMUnavailable(
         f"unknown LLM provider: {provider!r} (expected one of {_PROVIDER_NAMES})"
     )
+
+
+def get_llm_from_config(**kw: Any) -> LLMProvider:
+    """Like :func:`get_llm`, but provider/model come from config.toml.
+
+    MCP tool handlers (mem_judge / mem_compare) must honor the user's
+    configured ``[llm] provider`` the same way the legacy
+    :func:`memoryd.llm.get_provider` does — calling bare ``get_llm()``
+    silently pins them to the anthropic default and they fail with
+    "ANTHROPIC_API_KEY env not set" even when claude-code is configured.
+    """
+    # Local import to avoid circular bootstrap during ``memoryd.config`` loads
+    # (same reason as get_provider).
+    from ..config import load_config
+
+    cfg = load_config()
+    provider = cfg["llm"]["provider"]
+    model = cfg["llm"].get("model") or None
+    return get_llm(provider, model=model, **kw)

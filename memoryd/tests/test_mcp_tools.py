@@ -401,6 +401,7 @@ def mock_llm(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return FakeLLM()
 
     monkeypatch.setattr("memoryd.llm.get_llm", fake_get_llm)
+    monkeypatch.setattr("memoryd.llm.get_llm_from_config", fake_get_llm)
     return captured
 
 
@@ -426,6 +427,7 @@ async def test_mem_judge_falls_back_on_llm_failure(memory_root: Path, monkeypatc
     def raise_get_llm(*args, **kw):
         raise RuntimeError("no key")
     monkeypatch.setattr("memoryd.llm.get_llm", raise_get_llm)
+    monkeypatch.setattr("memoryd.llm.get_llm_from_config", raise_get_llm)
 
     out = await judge_tools.judge(new_text="new", old_memory_id="anchor2")
     assert out["ok"] is True
@@ -575,7 +577,7 @@ async def test_mem_suggest_topic_key_uses_llm(monkeypatch) -> None:
         async def generate(self, messages, **kw):
             return "  My_Key  \n"
 
-    monkeypatch.setattr("memoryd.llm.get_llm", lambda *a, **k: FakeLLM())
+    monkeypatch.setattr("memoryd.llm.get_llm_from_config", lambda *a, **k: FakeLLM())
     out = await admin_tools.suggest_topic_key("about implementing X")
     assert out["ok"] is True
     assert out["topic_key"] == "my_key"
@@ -586,7 +588,7 @@ async def test_mem_suggest_topic_key_uses_llm(monkeypatch) -> None:
 async def test_mem_suggest_topic_key_falls_back_to_heuristic(monkeypatch) -> None:
     def boom(*a, **k):
         raise RuntimeError("no llm")
-    monkeypatch.setattr("memoryd.llm.get_llm", boom)
+    monkeypatch.setattr("memoryd.llm.get_llm_from_config", boom)
     out = await admin_tools.suggest_topic_key("design system overhaul plan")
     assert out["ok"] is True
     assert out["source"] == "heuristic"

@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -31,6 +32,30 @@ from .base import LLMMessage, LLMUnavailable, split_system
 
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_TIMEOUT = 120.0
+
+# Well-known install dirs probed when `claude` is not on PATH. launchd jobs
+# and GUI-spawned MCP servers run with a minimal PATH (no ~/.local/bin), so
+# which() fails there and the literal "claude" fallback can never spawn —
+# real incident 2026-06-05: monthly-report exit 1 in launchd, MCP judge
+# permanently degraded. ~/.local/bin is probed first (Claude Code's default
+# install target); these system dirs are kept as a module constant so tests
+# can neutralize them.
+_EXTRA_FALLBACK_DIRS = (Path("/opt/homebrew/bin"), Path("/usr/local/bin"))
+
+
+def _discover_claude_bin() -> str:
+    """Resolve the `claude` CLI: env override > PATH > well-known dirs > literal."""
+    env = os.environ.get("MEMORYD_CLAUDE_BIN")
+    if env:
+        return env
+    found = shutil.which("claude")
+    if found:
+        return found
+    for d in (Path.home() / ".local" / "bin", *_EXTRA_FALLBACK_DIRS):
+        cand = d / "claude"
+        if cand.exists():
+            return str(cand)
+    return "claude"
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -93,11 +118,7 @@ class ClaudeCodeProvider:
         if binary is not None:
             self._binary = binary
         else:
-            self._binary = (
-                os.environ.get("MEMORYD_CLAUDE_BIN")
-                or shutil.which("claude")
-                or "claude"
-            )
+            self._binary = _discover_claude_bin()
         self._spawn = spawn  # tests inject; None = real subprocess
 
     @staticmethod
