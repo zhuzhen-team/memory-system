@@ -47,18 +47,13 @@ if [[ ! -t 0 ]]; then
     PAYLOAD="$(head -c 1048576 || true)"
 fi
 
-# 1. Transparently call the original notify target (Computer Use, etc.)
-ORIGINAL_EXIT=0
-if [[ -n "$ORIGINAL" ]] && [[ -x "$ORIGINAL" ]]; then
-    if [[ -n "$PAYLOAD" ]]; then
-        printf '%s' "$PAYLOAD" | "$ORIGINAL" "$@"
-    else
-        "$ORIGINAL" "$@" </dev/null
-    fi
-    ORIGINAL_EXIT=$?
-fi
-
-# 2. Fork memoryd capture (best-effort, never blocks Codex)
+# 1. Fork memoryd capture FIRST (best-effort, never blocks Codex).
+#
+# Order matters: capture used to run AFTER the original notify returned, but
+# the 2026-06-05 rebuild of SkyComputerUseClient can hang forever, which
+# blocked the wrapper before it ever reached the capture step — sessions
+# silently stopped being captured and hung notify chains piled up in ps.
+# Capture must not depend on any downstream notify target.
 MEMORYD_BIN="${MEMORYD_BIN:-/Users/abble/memory-system/memoryd/.venv/bin/memoryd}"
 if [[ -x "$MEMORYD_BIN" ]]; then
     (
@@ -84,6 +79,31 @@ print(json.dumps({
         printf '%s  capture done\n' "$(date -Iseconds)" >> "$LOG_FILE"
     ) &
     disown $! 2>/dev/null || true
+fi
+
+# 2. Call the original notify target (Computer Use, etc.) under a watchdog.
+# 30s is generous for a notification ping; a hung target gets killed so we
+# don't leak processes (and we exit 0 — its notification is best-effort too).
+ORIGINAL_EXIT=0
+if [[ -n "$ORIGINAL" ]] && [[ -x "$ORIGINAL" ]]; then
+    if [[ -n "$PAYLOAD" ]]; then
+        printf '%s' "$PAYLOAD" | "$ORIGINAL" "$@" &
+    else
+        "$ORIGINAL" "$@" </dev/null &
+    fi
+    ORIG_PID=$!
+    for _ in $(seq 1 60); do
+        kill -0 "$ORIG_PID" 2>/dev/null || break
+        sleep 0.5
+    done
+    if kill -0 "$ORIG_PID" 2>/dev/null; then
+        kill "$ORIG_PID" 2>/dev/null
+        printf '%s  original notify timed out after 30s; killed (pid %s)\n' \
+            "$(date -Iseconds)" "$ORIG_PID" >> "$LOG_FILE"
+    else
+        wait "$ORIG_PID"
+        ORIGINAL_EXIT=$?
+    fi
 fi
 
 exit "$ORIGINAL_EXIT"
